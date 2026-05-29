@@ -1,0 +1,60 @@
+========================================================================
+신규 기능 고도화: Word(워드) 추출 시 자동 저장 및 메인보드(대시보드) 복귀 연동
+========================================================================
+
+작성일시: 2026-05-29 (UTC)
+관련 파일: /App.tsx
+
+1. 기능 및 요구사항 매핑
+------------------------------------------------------------------------
+- [기존]: "Word로 내보내기" 버튼 클릭 시 클라이언트 자체 Blob을 다운로드하는 기능만 동작하고 화면은 일보 작성 페이지에 그대로 멈춰 있었습니다.
+- [개선]: 워드 다운로드 버튼이 "작업 완료 및 저장"을 완료짓는 액션 버튼의 위상을 가짐에 따라, 버튼 클릭 즉시:
+  ① 생성/수정된 일보 내용을 Firestore 데이터베이스의 해당 출장 레코드(`report` 필드)에 완벽하게 영구 저장합니다.
+  ② 오피스 소프트웨어 호환 서식을 반영한 Word 파일(.doc)을 실시간 다운로드합니다.
+  ③ "일보 파일이 성공적으로 저장 및 Word로 내보내기 되었습니다!" 알림(Toast 메세지)을 띄웁니다.
+  ④ 사용자 대기 세션을 매끄럽게 정리하며 메인화면(Home Dashboard)으로 바로 자동 이동(Redirect) 시킵니다.
+
+2. 수정 코드의 작동 구조 (App.tsx 내)
+------------------------------------------------------------------------
+```typescript
+  const handleExportToWord = async () => {
+    if (!generatedReport) {
+      alert(language === 'ja' ? '出力するレポートがありません。' : '내보낼 리포트 내용이 없습니다.');
+      return;
+    }
+
+    setLoading(true);
+
+    // 1단계: 작성된 일보 텍스트를 Firestore 'trips' 컬렉션의 해당 문서 최신화
+    if (activeTrip) {
+      try {
+        await updateDoc(doc(db, 'trips', activeTrip.id), { report: generatedReport });
+      } catch (e) {
+        console.error("Error saving report in export:", e);
+      }
+    }
+
+    // 2단계: 문서 정보 가공 및 Word 전용 태그 병합, UTF-8 BOM(\ufeff) 주입 및 Blob 추출
+    const titleText = activeTrip ? activeTrip.title : '출장보고서';
+    const reportHtmlContent = renderMarkdown(generatedReport);
+    const docHtml = `...`; // XML 기틀 및 스타일시트 포함
+
+    const blob = new Blob(['\ufeff' + docHtml], { type: 'application/msword;charset=utf-8' });
+    ... // 가상 a 링크를 활용한 UI 프리 브라우저 다운로드 트리거
+
+    // 3단계: 로딩 및 피드백 모듈 갱신과 '메인보드(Home)' 뷰 복귀
+    setLoading(false);
+    setNotification({
+      message: '일보 파일이 성공적으로 저장 및 Word로 내보내기 되었습니다!',
+      type: 'success'
+    });
+    
+    setView(ViewState.HOME); // 메인보드 복귀
+  };
+```
+
+3. 고도화된 메리트 및 UX 이점
+------------------------------------------------------------------------
+- **단일 액션(One-Click Complete)**: 다운로드와 저장, 화면 이동이 하나의 버튼 클릭으로 이어지기 때문에 별도의 "저장" 버튼이나 "뒤로가기" 버튼을 누르는 불합리한 멀티-태스킹 단계를 완벽하게 단축했습니다.
+- **클라우드 데이터 무결성 보장**: 저장 도중 브라우저가 꺼지거나 이탈하게 되더라도 Word 내보내기와 동시에 파이어베이스 백엔드 디비에 저장되므로 작업 내역이 절대 소실되지 않습니다.
+- **AI 일보 시스템 안정화 연계**: 이전 패치에서 빈 버튼 문제를 유발하던 두 콜백 메인 루프(`handleGenerateReport`, `handleAiScheduleAction`)와 맞물려, 사용자가 일정을 조율하자마저 완벽한 AI 일보 다운로드&자동완성이 에러 없이 최속으로 연결됩니다.

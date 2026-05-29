@@ -22,7 +22,12 @@ import {
   Save,
   X,
   Image as ImageIcon,
-  Send
+  Send,
+  Bot,
+  Mic,
+  Moon,
+  Sun,
+  Square
 } from 'lucide-react';
 
 export const IconMapPin = ({ className }: { className?: string }) => <MapPin className={className} />;
@@ -48,3 +53,40 @@ export const IconSave = ({ className }: { className?: string }) => <Save classNa
 export const IconX = ({ className }: { className?: string }) => <X className={className} />;
 export const IconImage = ({ className }: { className?: string }) => <ImageIcon className={className} />;
 export const IconSend = ({ className }: { className?: string }) => <Send className={className} />;
+export const IconBot = ({ className }: { className?: string }) => <Bot className={className} />;
+export const IconMic = ({ className }: { className?: string }) => <Mic className={className} />;
+export const IconMoon = ({ className }: { className?: string }) => <Moon className={className} />;
+export const IconSun = ({ className }: { className?: string }) => <Sun className={className} />;
+export const IconStop = ({ className }: { className?: string }) => <Square className={className} />;
+
+export const Icon1BLogo = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 100 140" className={className} xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <mask id="logo-cutout">
+        <rect width="100" height="140" fill="white" />
+        <text x="50" y="105" fontSize="90" fontWeight="900" fontFamily="Arial, sans-serif" fill="black" stroke="black" strokeWidth="4" textAnchor="middle" letterSpacing="-5">1B</text>
+        <circle cx="28" cy="115" r="10" fill="black" />
+        <circle cx="72" cy="115" r="10" fill="black" />
+      </mask>
+    </defs>
+
+    <g mask="url(#logo-cutout)">
+      {/* Handle */}
+      <path d="M 35 30 L 35 15 C 35 10 40 10 45 10 L 55 10 C 60 10 65 10 65 15 L 65 30" fill="none" stroke="currentColor" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+      
+      {/* Suitcase Body */}
+      <rect x="10" y="30" width="80" height="85" rx="15" fill="currentColor" />
+      
+      {/* Wheels */}
+      <circle cx="28" cy="115" r="16" fill="currentColor" />
+      <circle cx="72" cy="115" r="16" fill="currentColor" />
+    </g>
+
+    {/* 1B Text inner fill */}
+    <text x="50" y="105" fontSize="90" fontWeight="900" fontFamily="Arial, sans-serif" fill="currentColor" textAnchor="middle" letterSpacing="-5">1B</text>
+    
+    {/* Wheels inner dots */}
+    <circle cx="28" cy="115" r="5" fill="currentColor" />
+    <circle cx="72" cy="115" r="5" fill="currentColor" />
+  </svg>
+);

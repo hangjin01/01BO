@@ -1,5 +1,5 @@
 {
-  "name": "BizTrip Japan - Smart Business Trip Manager",
+  "name": "01BO",
   "description": "Japanese corporate business trip management app featuring geolocation-based check-in and AI-powered receipt scanning.",
   "requestFramePermissions": [
     "camera",

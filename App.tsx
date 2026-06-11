@@ -141,7 +141,8 @@ const TRANSLATIONS = {
     wake_word_listening: "「하이 제로보」待機中",
     theme_title: "テーマ設定",
     theme_light: "ライトモード",
-    theme_dark: "ダークモード"
+    theme_dark: "ダークモード",
+    btn_guest_login: "テストアカウントでログイン (ローカル)"
   },
   ko: {
     status_label: "현재 상태",
@@ -241,7 +242,8 @@ const TRANSLATIONS = {
     wake_word_listening: "「하이 제로보」 대기 중",
     theme_title: "테마 설정",
     theme_light: "라이트 모드",
-    theme_dark: "다크 모드"
+    theme_dark: "다크 모드",
+    btn_guest_login: "테스트 계정으로 로그인 (로컬 모드)"
   }
 };
 
@@ -264,10 +266,42 @@ const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 
 
 // --- Trip Map Component ---
 const TripMap = ({ items, t, theme }: { items: ItineraryItem[], t: any, theme?: 'light' | 'dark' }) => {
+  const [is3D, setIs3D] = useState(false);
+  const [libLoaded, setLibLoaded] = useState(false);
+
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
   const tileLayerInstance = useRef<L.TileLayer | null>(null);
 
+  const map3DRef = useRef<HTMLDivElement>(null);
+  const map3DInstance = useRef<any>(null);
+
+  // Dynamically load Maplibre GL JS when 3D is toggled
+  useEffect(() => {
+    if (!is3D || libLoaded) return;
+
+    if ((window as any).maplibregl) {
+      setLibLoaded(true);
+      return;
+    }
+
+    // Load CSS
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://unpkg.com/maplibre-gl@4.7.0/dist/maplibre-gl.css';
+    document.head.appendChild(link);
+
+    // Load JS
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/maplibre-gl@4.7.0/dist/maplibre-gl.js';
+    script.async = true;
+    script.onload = () => {
+      setLibLoaded(true);
+    };
+    document.head.appendChild(script);
+  }, [is3D, libLoaded]);
+
+  // Leaflet (2D) Map logic
   useEffect(() => {
     if (!mapRef.current) return;
 
@@ -346,9 +380,196 @@ const TripMap = ({ items, t, theme }: { items: ItineraryItem[], t: any, theme?: 
     return () => {
       // Map cleanup handled by ref check
     };
-  }, [items, t, theme]);
+  }, [items, t, theme, is3D]);
 
-  return <div ref={mapRef} className="w-full h-full rounded-xl z-0" />;
+  // Leaflet map resizing helper when toggled back to 2D
+  useEffect(() => {
+    if (!is3D && mapInstance.current) {
+      const timer = setTimeout(() => {
+        mapInstance.current?.invalidateSize();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [is3D]);
+
+  // Maplibre GL (3D) Map logic
+  useEffect(() => {
+    if (!is3D || !libLoaded || !map3DRef.current) return;
+
+    const maplibregl = (window as any).maplibregl;
+    if (!maplibregl) return;
+
+    // Calculate center coordinate
+    let center: [number, number] = [139.7671, 35.6812];
+    let zoom = 13;
+
+    if (items.length > 0) {
+      let sumLat = 0;
+      let sumLng = 0;
+      items.forEach(item => {
+        sumLat += item.coords.latitude;
+        sumLng += item.coords.longitude;
+      });
+      center = [sumLng / items.length, sumLat / items.length];
+    }
+
+    // Custom OpenStreetMap/CartoDB Raster Style for 3D Map
+    const style = {
+      version: 8,
+      sources: {
+        'raster-tiles': {
+          type: 'raster',
+          tiles: [
+            theme === 'dark'
+              ? 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+              : 'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'
+          ],
+          tileSize: 256,
+          attribution: '© OpenStreetMap contributors, © CARTO'
+        }
+      },
+      layers: [
+        {
+          id: 'simple-tiles',
+          type: 'raster',
+          source: 'raster-tiles',
+          minzoom: 0,
+          maxzoom: 19
+        }
+      ]
+    };
+
+    map3DInstance.current = new maplibregl.Map({
+      container: map3DRef.current,
+      style: style,
+      center: center,
+      zoom: zoom,
+      pitch: 60, // 3D Pitch
+      bearing: -20, // 3D Bearing
+      antialias: true
+    });
+
+    const map = map3DInstance.current;
+
+    // Add controls
+    map.addControl(new maplibregl.NavigationControl({
+      showCompass: true,
+      showZoom: true,
+      visualizePitch: true
+    }), 'top-left');
+
+    const bounds = new maplibregl.LngLatBounds();
+
+    items.forEach((item) => {
+      const { latitude, longitude } = item.coords;
+      bounds.extend([longitude, latitude]);
+
+      const el = document.createElement('div');
+      el.className = 'custom-3d-marker';
+      el.style.backgroundColor = '#4F46E5';
+      el.style.width = '18px';
+      el.style.height = '18px';
+      el.style.borderRadius = '50%';
+      el.style.border = `3px solid ${theme === 'dark' ? '#1f2937' : 'white'}`;
+      el.style.boxShadow = '0 4px 8px rgba(0,0,0,0.5)';
+      el.style.cursor = 'pointer';
+
+      const popupContent = document.createElement('div');
+      popupContent.style.padding = '4px';
+      popupContent.innerHTML = `
+        <strong style="font-size:14px; display:block; margin-bottom:2px; color: ${theme === 'dark' ? '#ffffff' : '#1e1b4b'}">${item.locationName}</strong>
+        <span style="color:${theme === 'dark' ? '#9ca3af' : '#6b7280'};font-size:12px; display:block; margin-bottom:8px;">${item.scheduledTime}</span>
+        <button class="nav-btn-3d" style="background-color:#4F46E5;color:white;border:none;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer;width:100%;font-weight:bold;transition:background-color 0.2s;">
+          ${t.btn_navigate}
+        </button>
+      `;
+
+      const btn = popupContent.querySelector('.nav-btn-3d') as HTMLButtonElement;
+      if (btn) {
+        btn.addEventListener('click', () => {
+          window.open(`https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`, '_blank');
+        });
+        btn.addEventListener('mouseenter', () => {
+          btn.style.backgroundColor = '#4338CA';
+        });
+        btn.addEventListener('mouseleave', () => {
+          btn.style.backgroundColor = '#4F46E5';
+        });
+      }
+
+      const popup = new maplibregl.Popup({ offset: 25, closeButton: false })
+        .setDOMContent(popupContent);
+
+      new maplibregl.Marker(el)
+        .setLngLat([longitude, latitude])
+        .setPopup(popup)
+        .addTo(map);
+    });
+
+    if (items.length > 0) {
+      map.once('load', () => {
+        map.fitBounds(bounds, {
+          padding: 60,
+          maxZoom: 15,
+          duration: 1200
+        });
+      });
+      // Fallback fit bounds
+      setTimeout(() => {
+        try {
+          map.fitBounds(bounds, {
+            padding: 60,
+            maxZoom: 15,
+            duration: 800
+          });
+        } catch (_) {}
+      }, 300);
+    }
+
+    return () => {
+      if (map3DInstance.current) {
+        map3DInstance.current.remove();
+        map3DInstance.current = null;
+      }
+    };
+  }, [is3D, libLoaded, items, theme, t]);
+
+  return (
+    <div className="w-full h-full relative">
+      {/* 2D Leaflet Map Container */}
+      <div 
+        ref={mapRef} 
+        className={`w-full h-full rounded-xl z-0 transition-opacity duration-300 ${is3D ? 'opacity-0 pointer-events-none absolute' : 'opacity-100'}`} 
+      />
+      
+      {/* 3D Maplibre Map Container */}
+      {is3D && (
+        <div 
+          ref={map3DRef} 
+          className="w-full h-full rounded-xl z-0 absolute top-0 left-0" 
+        />
+      )}
+
+      {/* 2D/3D Toggle Button */}
+      <div className="absolute top-3 right-3 z-[1000] flex gap-1 bg-white/90 dark:bg-gray-800/90 p-1 rounded-xl shadow-lg border border-gray-200/50 dark:border-gray-700/50 backdrop-blur-sm">
+        <button
+          onClick={() => setIs3D(false)}
+          className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${!is3D ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+        >
+          2D
+        </button>
+        <button
+          onClick={() => setIs3D(true)}
+          className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${is3D ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+        >
+          3D
+          {is3D && !libLoaded && (
+            <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white"></div>
+          )}
+        </button>
+      </div>
+    </div>
+  );
 };
 
 
@@ -1747,6 +1968,9 @@ const App: React.FC = () => {
   const languageRef = useRef(language);
   useEffect(() => { languageRef.current = language; }, [language]);
 
+  const isAiProcessingRef = useRef(isAiProcessing);
+  useEffect(() => { isAiProcessingRef.current = isAiProcessing; }, [isAiProcessing]);
+
   // --- AI Chat Logic ---
   const aiRequestIdRef = useRef<number | null>(null);
 
@@ -1835,7 +2059,7 @@ const App: React.FC = () => {
     let isAwake = false;
 
     recognition.onresult = (event: any) => {
-      if (!isWakeWordEnabledRef.current) return;
+      if (!isWakeWordEnabledRef.current || isAiProcessingRef.current) return;
 
       let interimTranscript = '';
       for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -1868,14 +2092,18 @@ const App: React.FC = () => {
 
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
         
-        if (command.trim().length > 0) {
-          silenceTimerRef.current = setTimeout(() => {
-            isAwake = false;
-            finalTranscript = '';
-            recognition.stop();
-            handleAiChatSubmitRef.current(command);
-          }, 2500); // Auto submit after 2.5s silence
-        }
+        silenceTimerRef.current = setTimeout(() => {
+          const finalCommand = command;
+          isAwake = false;
+          finalTranscript = '';
+          recognition.stop();
+          if (finalCommand.trim().length > 0) {
+            handleAiChatSubmitRef.current(finalCommand);
+          } else {
+            setShowAIChat(false);
+            setIsListening(false);
+          }
+        }, 2000); // Auto submit or cancel after exactly 2s silence
       }
     };
 
@@ -1902,6 +2130,8 @@ const App: React.FC = () => {
       recognition.stop();
       isAwake = false;
       finalTranscript = '';
+      setShowAIChat(false);
+      setIsListening(false);
     }
 
     return () => {
@@ -2451,6 +2681,15 @@ const App: React.FC = () => {
                 </svg>
               )}
               {isLoggingIn ? '로그인 처리 중...' : 'Google 계정으로 로그인'}
+            </button>
+
+            <button
+              onClick={handleGuestLogin}
+              disabled={isLoggingIn}
+              className={`w-full bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white p-4 rounded-xl font-bold flex items-center justify-center gap-3 shadow-md active:scale-95 transition-all ${isLoggingIn ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <IconZap className="w-5 h-5 text-indigo-100" />
+              {t.btn_guest_login}
             </button>
 
             <div className="p-4 bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 rounded-xl text-left text-xs border border-amber-100 dark:border-amber-900/40 space-y-1.5 shadow-sm leading-relaxed">

@@ -1,2 +1,54 @@
 /* O1BO Custom Stylesheet */
 /* Tailwind is loaded via CDN in index.html, you can add custom styles here if needed. */
+
+/* Maplibre Popup Custom Styles */
+.maplibregl-popup {
+  z-index: 1100;
+}
+.maplibregl-popup-content {
+  border-radius: 16px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+  padding: 12px 14px !important;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  font-family: 'Noto Sans JP', sans-serif;
+  background-color: #ffffff !important;
+  color: #1e1b4b !important;
+}
+.dark .maplibregl-popup-content {
+  background-color: #1f2937 !important;
+  color: #f3f4f6 !important;
+  border-color: #374151 !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5) !important;
+}
+.maplibregl-popup-anchor-top .maplibregl-popup-tip {
+  border-bottom-color: #ffffff !important;
+}
+.dark .maplibregl-popup-anchor-top .maplibregl-popup-tip {
+  border-bottom-color: #1f2937 !important;
+}
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+  border-top-color: #ffffff !important;
+}
+.dark .maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+  border-top-color: #1f2937 !important;
+}
+.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: #ffffff !important;
+}
+.dark .maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: #1f2937 !important;
+}
+.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: #ffffff !important;
+}
+.dark .maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: #1f2937 !important;
+}
+
+/* Custom 3D Marker animations */
+.custom-3d-marker {
+  transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.custom-3d-marker:hover {
+  transform: scale(1.3) !important;
+}

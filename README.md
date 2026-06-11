@@ -4,6 +4,52 @@ O1BO는 기업의 사원들이 출장 일정을 관리하고 경비를 정산하
 
 ---
 
+## 📂 프로젝트 폴더 및 소스코드 구조 (Project Directory Structure)
+
+현재 프로젝트는 최신 React, TypeScript, Vite 번들러 및 Firebase BaaS 기반으로 설계되었으며, 주요 소스코드는 역할에 따라 깔끔하게 분리되어 있습니다.
+
+```
+📂 O1BO (Root Directory)
+├── 📂 components/                  # 재사용 가능한 UI 컴포넌트 폴더
+│   └── 📄 Icons.tsx                # Lucide React 기반의 통합 아이콘 컴포넌트 모음
+├── 📂 services/                    # 비즈니스 로직 및 외부 API 연동 서비스
+│   ├── 📄 geminiService.ts          # Google Gemini AI 서비스 (일정 생성, 영수증 OCR, 일보 작성)
+│   └── 📄 locationService.ts        # Geolocation 기반 GPS 서비스 (좌표 측정 및 거리 계산)
+├── 📂 progress_history/             # 개발 히스토리 및 피처 기록 백업 폴더
+│   ├── 📄 bugfix_delete_modal_stuck_guide.txt
+│   ├── 📄 chat_features_info.txt
+│   ├── 📄 feature_ai_report_system_fix.txt
+│   ├── 📄 feature_ai_report_word_and_dashboard_integration.txt
+│   └── 📄 feature_ai_report_word_export.txt
+├── 📄 App.tsx                       # 메인 어플리케이션 컴포넌트 (UI 레이아웃, 라우팅, 상태 관리)
+├── 📄 types.ts                      # 애플리케이션 공통 데이터 모델 및 타입 정의 (TypeScript)
+├── 📄 firebase.ts                   # Firebase App 초기화 및 Firestore/Auth 설정
+├── 📄 firestore.rules               # 백엔드 데이터 접근 권한을 규정하는 Firestore 보안 규칙
+├── 📄 index.html                    # HTML 메인 템플릿
+├── 📄 index.tsx                     # React 진입점 (마운팅 코드)
+├── 📄 package.json                  # 프로젝트 의존성(Dependencies) 및 스크립트 정의
+├── 📄 tsconfig.json                 # TypeScript 컴파일 옵션 설정
+├── 📄 vite.config.ts                # Vite 빌드 도구 설정
+└── 📄 print-db.js                   # Firestore DB 데이터 디버깅을 위한 보조 스크립트
+```
+
+### 🔍 주요 핵심 파일 상세 분석
+
+* **[`App.tsx`](file:///c:/Users/User/.gemini/antigravity-ide/scratch/01BO/App.tsx) (메인 컨트롤러):**
+  * 서비스의 중심축 역할을 하는 컴포넌트로, 전반적인 상태 관리(State), 다국어 리소스(`ko`/`ja`), 캘린더 날짜 필터링, 테마 변경(Light/Dark), 그리고 각 권한별 화면 분기(일반 사용자 포털 vs 어드민 대시보드) 처리를 총괄합니다.
+* **[`types.ts`](file:///c:/Users/User/.gemini/antigravity-ide/scratch/01BO/types.ts) (타입 정보 정의):**
+  * `User`, `Trip`, `ItineraryItem`, `CheckInRecord`, `Expense` 등 DB 스키마와 일대일 매칭되는 인터페이스를 선언하여 코드 전반의 타입 세이프티를 확보합니다.
+* **[`services/geminiService.ts`](file:///c:/Users/User/.gemini/antigravity-ide/scratch/01BO/services/geminiService.ts) (Gemini AI 엔진):**
+  * **일정 자연어 제어:** 챗봇에 입력된 프롬프트를 분석하여 완전한 일정 데이터 객체를 반환합니다 (`generateTripFromChat`, `adjustTripItinerary`).
+  * **영수증 OCR:** 이미지 데이터를 파싱하여 가맹점명, 지출 금액, 결제일, 카테고리를 구조화된 JSON 데이터로 자동 리턴합니다 (`analyzeReceiptImage`).
+  * **출장 일보 자동 생성:** 체크인 기록과 영수증 정산 내역을 종합해 풍부한 마크다운 비즈니스 리포트를 만들어 줍니다 (`generateTripReport`).
+* **[`services/locationService.ts`](file:///c:/Users/User/.gemini/antigravity-ide/scratch/01BO/services/locationService.ts) (GPS/위치 계산):**
+  * 브라우저의 Geolocation API를 통해 고정밀 위도/경도를 획득하고, Haversine 공식을 사용해 목적지 중심과의 거리를 분석하여 50m 이내 자동 체크인 여부를 연산합니다.
+* **[`firestore.rules`](file:///c:/Users/User/.gemini/antigravity-ide/scratch/01BO/firestore.rules) (보안 계층):**
+  * 클라이언트 단의 제한에만 의존하지 않고 Firestore DB 단에서 접근 권한을 최종 차단 및 검증합니다.
+
+---
+
 ## 🌟 주요 기능 (Key Features)
 
 ### 1. 일반 사용자 (사원) 기능
@@ -68,7 +114,7 @@ O1BO는 기업의 사원들이 출장 일정을 관리하고 경비를 정산하
   ```
 
 ### 3. 권한 탈취 및 변조 방지
-* **역할(Role) 보호:** 사원이 임의로 자신의 권한을 `admin`으로 변경하거나, 다른 회사의 코드로 데이터를 조작할 수 없도록 데이터 쓰기(Create/Update) 시 엄격한 스키마 검증(`isValidUser`, `isValidCheckIn` 등)을 거칩니다.
+* **역할(Role) 보호:** 사원이 임의로 자신의 권한을 `admin`으로 변경하거나, 다른 회사의 코드로 데이터를 조작할 수 없도록 데이터 쓰기(Create/Update) 시 엄격한 스키마 검증(`isValidUser`, `isValidCheckIn` 등)을 거씁니다.
 * **소유권 검증:** 모든 데이터는 생성 시 현재 로그인한 사용자의 UID(`request.auth.uid`)와 일치해야만 저장이 허용됩니다.
 
 ---

@@ -357,6 +357,24 @@ const App: React.FC = () => {
   const [authUser, setAuthUser] = useState<FirebaseUser | null>(null);
   const [userData, setUserData] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isLocalGuest, setIsLocalGuest] = useState<boolean>(false);
+
+  // Local Guest data helpers
+  const saveLocalTrips = (trips: Trip[]) => {
+    if (localStorage.getItem('is_local_guest') === 'true' && authUser) {
+      localStorage.setItem(`local_trips_${authUser.uid}`, JSON.stringify(trips));
+    }
+  };
+  const saveLocalCheckIns = (records: CheckInRecord[]) => {
+    if (localStorage.getItem('is_local_guest') === 'true' && authUser) {
+      localStorage.setItem(`local_checkins_${authUser.uid}`, JSON.stringify(records));
+    }
+  };
+  const saveLocalExpenses = (expList: Expense[]) => {
+    if (localStorage.getItem('is_local_guest') === 'true' && authUser) {
+      localStorage.setItem(`local_expenses_${authUser.uid}`, JSON.stringify(expList));
+    }
+  };
 
   // State
   const [language, setLanguage] = useState<Lang>('ja');
@@ -482,6 +500,50 @@ const App: React.FC = () => {
 
   // Auth Effect
   useEffect(() => {
+    // Check if we were in local guest mode first
+    const savedIsGuest = localStorage.getItem('is_local_guest');
+    if (savedIsGuest === 'true') {
+      const savedProfile = localStorage.getItem('guest_user_profile');
+      let fakeUserData: User = {
+        uid: 'guest_test',
+        email: 'guest@o1bo-test.com',
+        name: '게스트 (테스트용)',
+        role: 'admin',
+        createdAt: new Date().toISOString(),
+        companyCode: 'TEST01'
+      };
+      if (savedProfile) {
+        try {
+          fakeUserData = JSON.parse(savedProfile);
+        } catch (_) {}
+      }
+      const fakeFirebaseUser = {
+        uid: fakeUserData.uid,
+        email: fakeUserData.email,
+        displayName: fakeUserData.name,
+        isAnonymous: true,
+        emailVerified: true
+      } as any;
+
+      setIsLocalGuest(true);
+      setAuthUser(fakeFirebaseUser);
+      setUserData(fakeUserData);
+      
+      const localTrips = localStorage.getItem(`local_trips_${fakeUserData.uid}`) || '[]';
+      const localCheckIns = localStorage.getItem(`local_checkins_${fakeUserData.uid}`) || '[]';
+      const localExpenses = localStorage.getItem(`local_expenses_${fakeUserData.uid}`) || '[]';
+      const parsedTrips = JSON.parse(localTrips) as Trip[];
+      
+      setAllTrips(parsedTrips);
+      setActiveTrip(parsedTrips.find(t => t.status === 'active') || parsedTrips[0] || null);
+      setUpcomingTrips(parsedTrips.filter(t => t.status === 'upcoming'));
+      setCheckIns(JSON.parse(localCheckIns));
+      setExpenses(JSON.parse(localExpenses));
+      
+      setIsAuthReady(true);
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       try {
         setAuthUser(user);
@@ -583,7 +645,7 @@ const App: React.FC = () => {
 
   // Data Fetching Effect
   useEffect(() => {
-    if (!isAuthReady || !authUser || !userData) return;
+    if (!isAuthReady || !authUser || !userData || isLocalGuest) return;
 
     let unsubUsers = () => {};
     if (userData.role === 'admin' && userData.companyCode) {
@@ -688,8 +750,64 @@ const App: React.FC = () => {
     }
   };
 
+  const handleGuestLogin = async () => {
+    if (isLoggingIn) return;
+    setIsLoggingIn(true);
+    setNotification(null);
+    try {
+      const guestUid = 'guest_' + Math.random().toString(36).substring(2, 9);
+      const fakeFirebaseUser = {
+        uid: guestUid,
+        email: 'guest@o1bo-test.com',
+        displayName: '테스트 게스트',
+        isAnonymous: true,
+        emailVerified: true
+      } as any;
+      
+      const fakeUserData: User = {
+        uid: guestUid,
+        email: 'guest@o1bo-test.com',
+        name: '게스트 (테스트용)',
+        role: 'admin',
+        createdAt: new Date().toISOString(),
+        companyCode: 'TEST01'
+      };
+
+      setIsLocalGuest(true);
+      localStorage.setItem('is_local_guest', 'true');
+      localStorage.setItem('guest_user_profile', JSON.stringify(fakeUserData));
+      
+      setAuthUser(fakeFirebaseUser);
+      setUserData(fakeUserData);
+      
+      // Load local guest data if it exists
+      const localTrips = localStorage.getItem(`local_trips_${guestUid}`) || '[]';
+      const localCheckIns = localStorage.getItem(`local_checkins_${guestUid}`) || '[]';
+      const localExpenses = localStorage.getItem(`local_expenses_${guestUid}`) || '[]';
+      
+      const parsedTrips = JSON.parse(localTrips) as Trip[];
+      setAllTrips(parsedTrips);
+      setActiveTrip(parsedTrips.find(t => t.status === 'active') || parsedTrips[0] || null);
+      setUpcomingTrips(parsedTrips.filter(t => t.status === 'upcoming'));
+      setCheckIns(JSON.parse(localCheckIns));
+      setExpenses(JSON.parse(localExpenses));
+
+      setNotification({ message: '테스트 계정(로컬 모드)으로 로그인했습니다. 새로운 일정을 등록해 보세요!', type: 'success' });
+    } catch (error) {
+      console.warn("Guest login failed", error);
+      setNotification({ message: '테스트 계정 로그인 실패', type: 'error' });
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
   const handleLogout = async () => {
     try {
+      setIsLocalGuest(false);
+      localStorage.removeItem('is_local_guest');
+      localStorage.removeItem('guest_user_profile');
+      setAuthUser(null);
+      setUserData(null);
       await signOut(auth);
     } catch (error) {
       console.error('Logout error', error);
@@ -922,9 +1040,13 @@ const App: React.FC = () => {
     };
 
     // Update locally first
-    setCheckIns(prev => [...prev.filter(ci => ci.id !== newRecord.id), newRecord]);
+    setCheckIns(prev => {
+      const updated = [...prev.filter(ci => ci.id !== newRecord.id), newRecord];
+      saveLocalCheckIns(updated);
+      return updated;
+    });
 
-    if (authUser) {
+    if (authUser && !isLocalGuest) {
       try {
         await setDoc(doc(db, 'checkIns', newRecord.id), newRecord);
       } catch (error) {
@@ -1004,9 +1126,13 @@ const App: React.FC = () => {
     };
 
     // Update locally first
-    setCheckIns(prev => [...prev.filter(ci => ci.id !== newRecord.id), newRecord]);
+    setCheckIns(prev => {
+      const updated = [...prev.filter(ci => ci.id !== newRecord.id), newRecord];
+      saveLocalCheckIns(updated);
+      return updated;
+    });
 
-    if (authUser) {
+    if (authUser && !isLocalGuest) {
       try {
         await setDoc(doc(db, 'checkIns', newRecord.id), newRecord);
       } catch (error) {
@@ -1051,9 +1177,13 @@ const App: React.FC = () => {
           };
           
           // Update locally first
-          setExpenses(prev => [...prev.filter(e => e.id !== newExpense.id), newExpense]);
+          setExpenses(prev => {
+            const updated = [...prev.filter(e => e.id !== newExpense.id), newExpense];
+            saveLocalExpenses(updated);
+            return updated;
+          });
 
-          if (authUser) {
+          if (authUser && !isLocalGuest) {
             try {
               await setDoc(doc(db, 'expenses', newExpense.id), newExpense);
             } catch (dbError) {
@@ -1109,9 +1239,11 @@ const App: React.FC = () => {
       const updatedTrip = { ...activeTrip, report: generatedReport };
       setActiveTrip(updatedTrip);
       setUpcomingTrips(prev => prev.map(t => t.id === activeTrip.id ? updatedTrip : t));
-      setAllTrips(prev => prev.map(t => t.id === activeTrip.id ? updatedTrip : t));
+      const newAllTrips = allTrips.map(t => t.id === activeTrip.id ? updatedTrip : t);
+      setAllTrips(newAllTrips);
+      saveLocalTrips(newAllTrips);
 
-      if (authUser) {
+      if (authUser && !isLocalGuest) {
         try {
           await updateDoc(doc(db, 'trips', activeTrip.id), { report: generatedReport });
         } catch (e) {
@@ -1247,10 +1379,12 @@ const App: React.FC = () => {
       const updatedTrip = { ...activeTrip, report };
       setActiveTrip(updatedTrip);
       setUpcomingTrips(prev => prev.map(t => t.id === activeTrip.id ? updatedTrip : t));
-      setAllTrips(prev => prev.map(t => t.id === activeTrip.id ? updatedTrip : t));
+      const newAllTrips = allTrips.map(t => t.id === activeTrip.id ? updatedTrip : t);
+      setAllTrips(newAllTrips);
+      saveLocalTrips(newAllTrips);
       setReportPrompt('');
 
-      if (authUser) {
+      if (authUser && !isLocalGuest) {
         try {
           await updateDoc(doc(db, 'trips', activeTrip.id), { report });
         } catch (dbError) {
@@ -1293,10 +1427,12 @@ const App: React.FC = () => {
       // Update locally
       setActiveTrip(updatedTrip);
       setUpcomingTrips(prev => prev.map(t => t.id === activeTrip.id ? updatedTrip : t));
-      setAllTrips(prev => prev.map(t => t.id === activeTrip.id ? updatedTrip : t));
+      const newAllTrips = allTrips.map(t => t.id === activeTrip.id ? updatedTrip : t);
+      setAllTrips(newAllTrips);
+      saveLocalTrips(newAllTrips);
       setReportPrompt('');
 
-      if (authUser) {
+      if (authUser && !isLocalGuest) {
         try {
           await updateDoc(doc(db, 'trips', activeTrip.id), { itinerary: updatedItinerary });
         } catch (dbError) {
@@ -1326,9 +1462,11 @@ const App: React.FC = () => {
     const updatedTrip = { ...activeTrip, report: generatedReport };
     setActiveTrip(updatedTrip);
     setUpcomingTrips(prev => prev.map(t => t.id === activeTrip.id ? updatedTrip : t));
-    setAllTrips(prev => prev.map(t => t.id === activeTrip.id ? updatedTrip : t));
+    const newAllTrips = allTrips.map(t => t.id === activeTrip.id ? updatedTrip : t);
+    setAllTrips(newAllTrips);
+    saveLocalTrips(newAllTrips);
 
-    if (!authUser) return true;
+    if (!authUser || isLocalGuest) return true;
 
     try {
       await updateDoc(doc(db, 'trips', activeTrip.id), { report: generatedReport });
@@ -1389,11 +1527,13 @@ const App: React.FC = () => {
       ...(userData?.companyCode ? { companyCode: userData.companyCode } : {})
     };
 
-    if (!authUser) {
+    if (!authUser || isLocalGuest) {
       // Guest fallback to keep application usable
-      setUpcomingTrips(prev => [...prev, newTrip]);
-      setAllTrips(prev => [...prev, newTrip]);
+      const updatedTrips = [...allTrips, newTrip];
+      setUpcomingTrips(updatedTrips.filter(t => t.status === 'upcoming'));
+      setAllTrips(updatedTrips);
       setActiveTrip(newTrip);
+      saveLocalTrips(updatedTrips);
       setNewTripData({ title: '', destination: '', startDate: '', endDate: '', purpose: '' });
       setView(tripCreationSource || ViewState.HOME);
       setNotification({ message: t.msg_trip_created, type: 'success' });
@@ -1431,12 +1571,23 @@ const App: React.FC = () => {
           setLoading(true);
 
           // Always update local states first so it updates instantly in the UI
-          setUpcomingTrips(prev => prev.filter(t => t.id !== tripId));
-          setAllTrips(prev => prev.filter(t => t.id !== tripId));
-          setCheckIns(prev => prev.filter(ci => ci.tripId !== tripId));
-          setExpenses(prev => prev.filter(ex => ex.tripId !== tripId));
+          const newAllTrips = allTrips.filter(t => t.id !== tripId);
+          setUpcomingTrips(newAllTrips.filter(t => t.status === 'upcoming'));
+          setAllTrips(newAllTrips);
 
-          if (authUser) {
+          const newCheckIns = checkIns.filter(ci => ci.tripId !== tripId);
+          setCheckIns(newCheckIns);
+
+          const newExpenses = expenses.filter(ex => ex.tripId !== tripId);
+          setExpenses(newExpenses);
+
+          if (isLocalGuest && authUser) {
+            localStorage.setItem(`local_trips_${authUser.uid}`, JSON.stringify(newAllTrips));
+            localStorage.setItem(`local_checkins_${authUser.uid}`, JSON.stringify(newCheckIns));
+            localStorage.setItem(`local_expenses_${authUser.uid}`, JSON.stringify(newExpenses));
+          }
+
+          if (authUser && !isLocalGuest) {
             try {
               // Cascadingly delete all check-ins associated with this trip
               const checkInsQuery = query(collection(db, 'checkIns'), where('tripId', '==', tripId));
@@ -1502,11 +1653,13 @@ const App: React.FC = () => {
     // Always update locally first
     setActiveTrip(updatedTrip);
     setUpcomingTrips(prev => prev.map(t => t.id === activeTrip.id ? updatedTrip : t));
-    setAllTrips(prev => prev.map(t => t.id === activeTrip.id ? updatedTrip : t));
+    const newAllTrips = allTrips.map(t => t.id === activeTrip.id ? updatedTrip : t);
+    setAllTrips(newAllTrips);
+    saveLocalTrips(newAllTrips);
     setEditingItemId(null);
     setEditItemData({});
 
-    if (authUser) {
+    if (authUser && !isLocalGuest) {
       try {
         await updateDoc(doc(db, 'trips', activeTrip.id), { itinerary: updatedItinerary });
       } catch (error) {
@@ -1527,10 +1680,12 @@ const App: React.FC = () => {
         // Always update locally first for responsiveness and Guest mode compatibility
         setActiveTrip(updatedTrip);
         setUpcomingTrips(prev => prev.map(t => t.id === activeTrip.id ? updatedTrip : t));
-        setAllTrips(prev => prev.map(t => t.id === activeTrip.id ? updatedTrip : t));
+        const newAllTrips = allTrips.map(t => t.id === activeTrip.id ? updatedTrip : t);
+        setAllTrips(newAllTrips);
+        saveLocalTrips(newAllTrips);
         setNotification({ message: t.msg_itinerary_deleted, type: 'success' });
 
-        if (authUser) {
+        if (authUser && !isLocalGuest) {
           try {
             setLoading(true);
             await updateDoc(doc(db, 'trips', activeTrip.id), { itinerary: updatedItinerary });
@@ -1642,10 +1797,13 @@ const App: React.FC = () => {
         ...(userData?.companyCode ? { companyCode: userData.companyCode } : {})
       };
 
-      if (authUser?.uid) {
+      if (authUser?.uid && !isLocalGuest) {
         await setDoc(doc(db, 'trips', newTrip.id), newTrip);
       } else {
-        setUpcomingTrips(prev => [...prev, newTrip]); // Fallback for anonymous
+        const updatedTrips = [...allTrips, newTrip];
+        setUpcomingTrips(updatedTrips.filter(t => t.status === 'upcoming'));
+        setAllTrips(updatedTrips);
+        saveLocalTrips(updatedTrips);
       }
 
       setNotification({ message: t.ai_bot_success, type: 'success' });

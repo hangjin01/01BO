@@ -27,7 +27,9 @@ import {
   Mic,
   Moon,
   Sun,
-  Square
+  Square,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 export const IconMapPin = ({ className }: { className?: string }) => <MapPin className={className} />;
@@ -58,6 +60,8 @@ export const IconMic = ({ className }: { className?: string }) => <Mic className
 export const IconMoon = ({ className }: { className?: string }) => <Moon className={className} />;
 export const IconSun = ({ className }: { className?: string }) => <Sun className={className} />;
 export const IconStop = ({ className }: { className?: string }) => <Square className={className} />;
+export const IconEye = ({ className }: { className?: string }) => <Eye className={className} />;
+export const IconEyeOff = ({ className }: { className?: string }) => <EyeOff className={className} />;
 
 export const Icon1BLogo = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 100 140" className={className} xmlns="http://www.w3.org/2000/svg">

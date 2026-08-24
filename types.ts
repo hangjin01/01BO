@@ -5,6 +5,7 @@ export interface User {
   role: 'admin' | 'employee';
   createdAt: string;
   companyCode?: string;
+  teamCode?: string;
 }
 
 export interface Coordinate {
@@ -34,6 +35,10 @@ export interface Trip {
   purpose?: string;
   createdAt?: string;
   companyCode?: string;
+  teamCode?: string;
+  userName?: string;
+  userEmail?: string;
+  isSharedWithTeam?: boolean;
   report?: string;
 }
 
@@ -48,6 +53,7 @@ export interface CheckInRecord {
   verified: boolean;
   itineraryItemId?: string;
   companyCode?: string;
+  nfcTagId?: string;
 }
 
 export interface Expense {

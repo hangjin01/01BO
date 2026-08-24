@@ -52,3 +52,51 @@
 .custom-3d-marker:hover {
   transform: scale(1.3) !important;
 }
+
+/* 01Bo Custom Utilities */
+.shadow-card-soft {
+  box-shadow: 0 10px 30px -10px rgba(15, 23, 42, 0.06), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
+}
+
+.shadow-card-hover {
+  transition: all 0.2s ease-in-out;
+}
+.shadow-card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 15px 35px -10px rgba(249, 115, 22, 0.15), 0 8px 12px -4px rgba(15, 23, 42, 0.08);
+}
+
+.glass-dark {
+  background: rgba(30, 41, 59, 0.75);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-light {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(241, 245, 249, 0.8);
+}
+
+/* Timeline Vertical Line */
+.timeline-vertical-line {
+  position: absolute;
+  left: 20px;
+  top: 32px;
+  bottom: 24px;
+  width: 2px;
+  background: linear-gradient(180deg, #f97316 0%, #cbd5e1 100%);
+}
+
+.dark .timeline-vertical-line {
+  background: linear-gradient(180deg, #f97316 0%, #334155 100%);
+}
+
+/* Hide Scrollbar for clean mobile scroll */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

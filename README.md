@@ -122,7 +122,7 @@ O1BO는 기업의 사원들이 출장 일정을 관리하고 경비를 정산하
 ## 🛠 기술 스택 (Tech Stack)
 
 * **Frontend:** React 18, TypeScript, Tailwind CSS, Vite
-* **Backend/BaaS:** Firebase (Authentication, Firestore Database)
+* **Backend/BaaS:** Aws
 * **AI Integration:** Google Gemini API (텍스트 기반 일정 생성, 이미지 기반 영수증 OCR)
 * **Mapping:** Leaflet, React-Leaflet
 * **Icons:** Lucide React

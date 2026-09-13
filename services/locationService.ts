@@ -1,5 +1,4 @@
 import { Coordinate } from '../types';
-import firebaseConfig from '../firebase-applet-config.json';
 
 export const getCurrentPosition = (): Promise<Coordinate> => {
   return new Promise((resolve, reject) => {
@@ -47,10 +46,9 @@ export const geocodeAddress = async (address: string): Promise<Coordinate> => {
     throw new Error('Address is empty');
   }
 
-  // 1. Google Maps Geocoding API (using Firebase API key or localStorage override)
-  const mapsApiKey = typeof window !== 'undefined'
-    ? localStorage.getItem('o1bo_google_maps_api_key') || firebaseConfig.apiKey || ""
-    : firebaseConfig.apiKey || "";
+  // 1. Google Maps Geocoding API (using VITE_GOOGLE_MAPS_API_KEY or localStorage override)
+  const mapsApiKey = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string)
+    || (typeof window !== 'undefined' ? localStorage.getItem('o1bo_google_maps_api_key') || "" : "");
 
   if (mapsApiKey) {
     try {

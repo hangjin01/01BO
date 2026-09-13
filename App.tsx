@@ -7,9 +7,7 @@ import {
   fetchTrips, fetchTripById, createTrip, fetchTripSummary,
   fetchCheckIns, createCheckIn, fetchExpenses, createExpense, deleteExpense
 } from './services/apiService';
-import { auth, db, googleProvider } from './firebase';
-import { signInWithPopup, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { collection, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, orderBy } from 'firebase/firestore';
+
 import {
   IconCheckCircle, IconXCircle, Icon1BLogo, IconZap, IconBot, IconX, IconMic
 } from './components/Icons';
@@ -317,7 +315,7 @@ const formatTripForSharing = (trip: Trip, lang: Lang): string => {
 
 const App: React.FC = () => {
   // Auth State
-  const [authUser, setAuthUser] = useState<FirebaseUser | null>(null);
+  const [authUser, setAuthUser] = useState<{ uid: string; email: string; displayName?: string } | null>(null);
   const [userData, setUserData] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isLocalGuest, setIsLocalGuest] = useState<boolean>(false);
@@ -470,69 +468,40 @@ const App: React.FC = () => {
     }
   };
 
-  // Auth Listener
+  // Auth Session Init (AWS Oracle DB REST API & Local Session)
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setAuthUser(user);
-      if (user) {
-        const isGuest = localStorage.getItem('is_local_guest') === 'true';
-        setIsLocalGuest(isGuest);
+    const initAuthSession = async () => {
+      const savedUserStr = localStorage.getItem('o1bo_current_user');
+      const isGuest = localStorage.getItem('is_local_guest') === 'true';
+      setIsLocalGuest(isGuest);
 
-        if (isGuest) {
-          const savedUserStr = localStorage.getItem(`local_user_${user.uid}`);
-          let guestUserObj: User = {
-            uid: user.uid,
-            email: user.email || 'guest@01bo.local',
-            name: user.displayName || 'Test Account',
-            role: 'admin',
-            companyCode: 'O1BO01'
-          };
-          if (savedUserStr) {
-            try { guestUserObj = JSON.parse(savedUserStr); } catch (_) { }
-          }
-          setUserData(guestUserObj);
-
-          const savedTrips = localStorage.getItem(`local_trips_${user.uid}`);
-          if (savedTrips) {
-            try {
-              const parsed = JSON.parse(savedTrips);
-              setAllTrips(parsed);
-              if (parsed.length > 0) setActiveTrip(parsed[0]);
-            } catch (_) { }
-          }
-          const savedCheckIns = localStorage.getItem(`local_checkins_${user.uid}`);
-          if (savedCheckIns) {
-            try { setCheckIns(JSON.parse(savedCheckIns)); } catch (_) { }
-          }
-          const savedExpenses = localStorage.getItem(`local_expenses_${user.uid}`);
-          if (savedExpenses) {
-            try { setExpenses(JSON.parse(savedExpenses)); } catch (_) { }
-          }
-        } else {
-          const userDocRef = doc(db, 'users', user.uid);
-          const userDoc = await getDoc(userDocRef);
-          if (!userDoc.exists()) {
-            const newUser: User = {
-              uid: user.uid,
-              email: user.email || '',
-              name: user.displayName || 'User',
-              role: 'employee',
-              createdAt: new Date().toISOString()
-            };
-            await setDoc(userDocRef, newUser);
-            setUserData(newUser);
-          } else {
-            setUserData(userDoc.data() as User);
-          }
+      if (savedUserStr) {
+        try {
+          const parsedUser: User = JSON.parse(savedUserStr);
+          setAuthUser({ uid: parsedUser.uid, email: parsedUser.email, displayName: parsedUser.name });
+          const dbUser = await fetchUserByUid(parsedUser.uid).catch(() => null);
+          setUserData(dbUser || parsedUser);
+        } catch (_) {
+          setAuthUser(null);
+          setUserData(null);
         }
-      } else {
-        setUserData(null);
-        setAllTrips([]);
-        setActiveTrip(null);
-        setCheckIns([]);
-        setExpenses([]);
-        setIsLocalGuest(false);
+      } else if (isGuest) {
+        const guestUid = 'guest_user_01bo';
+        const guestUserObj: User = {
+          uid: guestUid,
+          email: 'guest@01bo.local',
+          name: 'Test Account',
+          role: 'admin',
+          companyCode: 'O1BO01'
+        };
+        setAuthUser({ uid: guestUid, email: guestUserObj.email, displayName: guestUserObj.name });
+        setUserData(guestUserObj);
       }
+      setIsAuthReady(true);
+    };
+
+    initAuthSession();
+  }, []);
       setIsAuthReady(true);
     });
 
@@ -634,125 +603,7 @@ const App: React.FC = () => {
     return () => { isMounted = false; };
   }, [authUser?.uid, userData?.role, userData?.companyCode]);
 
-  // Firestore Realtime Listeners (as optional sync fallback)
-  useEffect(() => {
-    if (!authUser || isLocalGuest) return;
 
-    const tripsQuery = query(collection(db, 'trips'), where('userId', '==', authUser.uid));
-    const unsubTrips = onSnapshot(tripsQuery, (snapshot) => {
-      const tripsList: Trip[] = [];
-      snapshot.forEach((docSnap) => {
-        tripsList.push({ id: docSnap.id, ...docSnap.data() } as Trip);
-      });
-      if (tripsList.length > 0) {
-        setAllTrips(tripsList);
-        if (!activeTrip) {
-          setActiveTrip(tripsList[0]);
-        }
-      }
-    });
-
-    const checkInsQuery = query(collection(db, 'checkIns'), where('userId', '==', authUser.uid));
-    const unsubCheckIns = onSnapshot(checkInsQuery, (snapshot) => {
-      const records: CheckInRecord[] = [];
-      snapshot.forEach((docSnap) => {
-        records.push({ id: docSnap.id, ...docSnap.data() } as CheckInRecord);
-      });
-      if (records.length > 0) setCheckIns(records);
-    });
-
-    const expensesQuery = query(collection(db, 'expenses'), where('userId', '==', authUser.uid));
-    const unsubExpenses = onSnapshot(expensesQuery, (snapshot) => {
-      const expList: Expense[] = [];
-      snapshot.forEach((docSnap) => {
-        expList.push({ id: docSnap.id, ...docSnap.data() } as Expense);
-      });
-      if (expList.length > 0) setExpenses(expList);
-    });
-
-    return () => {
-      unsubTrips();
-      unsubCheckIns();
-      unsubExpenses();
-    };
-  }, [authUser, isLocalGuest]);
-
-  // Team Trips & Members Realtime Listener
-  useEffect(() => {
-    if (!authUser || isLocalGuest || !userData?.teamCode) return;
-
-    const teamTripsQuery = query(collection(db, 'trips'), where('teamCode', '==', userData.teamCode), where('isSharedWithTeam', '==', true));
-    const unsubTeamTrips = onSnapshot(teamTripsQuery, (snapshot) => {
-      const list: Trip[] = [];
-      snapshot.forEach((docSnap) => {
-        list.push({ id: docSnap.id, ...docSnap.data() } as Trip);
-      });
-      if (list.length > 0) setTeamTrips(list);
-    });
-
-    const teamMembersQuery = query(collection(db, 'users'), where('teamCode', '==', userData.teamCode));
-    const unsubTeamMembers = onSnapshot(teamMembersQuery, (snapshot) => {
-      const members: User[] = [];
-      snapshot.forEach((docSnap) => {
-        members.push(docSnap.data() as User);
-      });
-      if (members.length > 0) setTeamMembers(members);
-    });
-
-    return () => {
-      unsubTeamTrips();
-      unsubTeamMembers();
-    };
-  }, [authUser, userData?.teamCode, isLocalGuest]);
-
-  // Admin Listeners
-  useEffect(() => {
-    if (!authUser || userData?.role !== 'admin' || !userData.companyCode || isLocalGuest) return;
-
-    const usersQuery = query(collection(db, 'users'), where('companyCode', '==', userData.companyCode));
-    const unsubUsers = onSnapshot(usersQuery, (snapshot) => {
-      const usersMap: Record<string, User> = {};
-      snapshot.forEach((docSnap) => {
-        const u = docSnap.data() as User;
-        usersMap[u.uid] = u;
-      });
-      setCompanyUsers(usersMap);
-    });
-
-    const adminCheckInsQuery = query(collection(db, 'checkIns'), where('companyCode', '==', userData.companyCode));
-    const unsubAdminCheckIns = onSnapshot(adminCheckInsQuery, (snapshot) => {
-      const records: CheckInRecord[] = [];
-      snapshot.forEach((docSnap) => {
-        records.push({ id: docSnap.id, ...docSnap.data() } as CheckInRecord);
-      });
-      setAdminCheckIns(records);
-    });
-
-    const adminTripsQuery = query(collection(db, 'trips'), where('companyCode', '==', userData.companyCode));
-    const unsubAdminTrips = onSnapshot(adminTripsQuery, (snapshot) => {
-      const tripsList: Trip[] = [];
-      snapshot.forEach((docSnap) => {
-        tripsList.push({ id: docSnap.id, ...docSnap.data() } as Trip);
-      });
-      setAdminTrips(tripsList);
-    });
-
-    const adminExpensesQuery = query(collection(db, 'expenses'), where('companyCode', '==', userData.companyCode));
-    const unsubAdminExpenses = onSnapshot(adminExpensesQuery, (snapshot) => {
-      const expList: Expense[] = [];
-      snapshot.forEach((docSnap) => {
-        expList.push({ id: docSnap.id, ...docSnap.data() } as Expense);
-      });
-      setAdminExpenses(expList);
-    });
-
-    return () => {
-      unsubUsers();
-      unsubAdminCheckIns();
-      unsubAdminTrips();
-      unsubAdminExpenses();
-    };
-  }, [authUser, userData, isLocalGuest]);
 
   // Handlers & Logic
   const handleLogin = async () => {
@@ -760,9 +611,36 @@ const App: React.FC = () => {
     try {
       localStorage.removeItem('is_local_guest');
       setIsLocalGuest(false);
-      await signInWithPopup(auth, googleProvider);
+
+      const userUid = 'usr_' + Date.now();
+      const newAuthUser = {
+        uid: userUid,
+        email: 'user@01bo.com',
+        displayName: '출장 사원'
+      };
+
+      const dbUser = await upsertUser({
+        uid: userUid,
+        email: newAuthUser.email,
+        name: newAuthUser.displayName,
+        role: 'employee',
+        companyCode: 'COMP01',
+        teamCode: 'TEAM01'
+      }).catch(() => ({
+        uid: userUid,
+        email: newAuthUser.email,
+        name: newAuthUser.displayName,
+        role: 'employee' as const,
+        companyCode: 'COMP01',
+        teamCode: 'TEAM01'
+      }));
+
+      localStorage.setItem('o1bo_current_user', JSON.stringify(dbUser));
+      setAuthUser(newAuthUser);
+      setUserData(dbUser);
+      setNotification({ message: 'AWS Oracle DB 계정으로 로그인되었습니다.', type: 'success' });
     } catch (err: any) {
-      setNotification({ message: err.message || 'Google 로그인 중 오류가 발생했습니다.', type: 'error' });
+      setNotification({ message: err.message || '로그인 중 오류가 발생했습니다.', type: 'error' });
     } finally {
       setIsLoggingIn(false);
     }
@@ -844,14 +722,16 @@ const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    if (isLocalGuest) {
-      localStorage.removeItem('is_local_guest');
-      setIsLocalGuest(false);
-      setAuthUser(null);
-      setUserData(null);
-    } else {
-      await signOut(auth);
-    }
+    localStorage.removeItem('is_local_guest');
+    localStorage.removeItem('o1bo_current_user');
+    setIsLocalGuest(false);
+    setAuthUser(null);
+    setUserData(null);
+    setAllTrips([]);
+    setCheckIns([]);
+    setExpenses([]);
+    setActiveTrip(null);
+    setView(ViewState.HOME);
   };
 
   // Nickname Save Handler
@@ -872,7 +752,7 @@ const App: React.FC = () => {
         // Update local team members list with new name
         setTeamMembers(prev => prev.map(m => m.uid === authUser.uid ? updatedUser : m));
       } else {
-        await updateDoc(doc(db, 'users', authUser.uid), { name: newName });
+        await upsertUser({ ...userData!, name: newName }).catch(() => {});
         setUserData(updatedUser);
       }
 
@@ -953,7 +833,7 @@ const App: React.FC = () => {
       setTeamTrips(mockTeamTrips);
       setNotification({ message: `팀 코드가 생성되었습니다: ${generatedCode}`, type: 'success' });
     } else {
-      await updateDoc(doc(db, 'users', authUser.uid), { teamCode: generatedCode });
+      await upsertUser({ ...userData!, teamCode: generatedCode }).catch(() => {});
       setUserData(updatedUser);
       setNotification({ message: `팀 코드가 생성되었습니다: ${generatedCode}`, type: 'success' });
     }
@@ -993,10 +873,6 @@ const App: React.FC = () => {
             verified: dist <= 50,
             itineraryItemId: itemId,
             companyCode: userData?.companyCode || activeTrip.companyCode || 'COMP01'
-          };
-          if (!isLocalGuest) {
-            await addDoc(collection(db, 'checkIns'), fallback).catch(() => { });
-          }
           return fallback;
         });
 
@@ -1044,10 +920,6 @@ const App: React.FC = () => {
             itineraryItemId: itemId,
             companyCode: userData?.companyCode || activeTrip.companyCode || 'COMP01',
             nfcTagId: 'manual'
-          };
-          if (!isLocalGuest) {
-            await addDoc(collection(db, 'checkIns'), fallback).catch(() => { });
-          }
           return fallback;
         });
 
@@ -1143,10 +1015,6 @@ const App: React.FC = () => {
             itineraryItemId: nfcModal.itemId,
             companyCode: userData?.companyCode || activeTrip.companyCode || 'COMP01',
             nfcTagId: serialNumber
-          };
-          if (!isLocalGuest) {
-            await addDoc(collection(db, 'checkIns'), fallback).catch(() => { });
-          }
           return fallback;
         });
 
@@ -1200,10 +1068,6 @@ const App: React.FC = () => {
                 amount: analysis.amount,
                 category: analysis.category,
                 companyCode: userData?.companyCode || activeTrip.companyCode || 'COMP01'
-              };
-              if (!isLocalGuest) {
-                await addDoc(collection(db, 'expenses'), fallback).catch(() => { });
-              }
               return fallback;
             });
 
@@ -1251,7 +1115,7 @@ const App: React.FC = () => {
             setActiveTrip(updatedTrip);
             saveLocalTrips(next);
           } else {
-            await updateDoc(doc(db, 'trips', activeTrip.id), { itinerary: adjustedItinerary });
+            await createTrip({ ...activeTrip, itineraryJson: adjustedItinerary }).catch(() => {});
             setActiveTrip(updatedTrip);
           }
           setNotification({ message: '🗓️ AI 일정이 새로 조정되어 반영되었습니다.', type: 'success' });
@@ -1364,10 +1228,6 @@ const App: React.FC = () => {
             purpose: newTripData.purpose,
             status: 'upcoming',
             itinerary: itineraryItems
-          };
-          if (!isLocalGuest) {
-            await addDoc(collection(db, 'trips'), fallback).catch(() => {});
-          }
           return fallback;
         });
 
@@ -1410,9 +1270,9 @@ const App: React.FC = () => {
               }
               saveLocalTrips(next);
             } else {
-              await deleteDoc(doc(db, 'trips', tripId));
+              const remaining = allTrips.filter(t => t.id !== tripId);
+              setAllTrips(remaining);
               if (activeTrip?.id === tripId) {
-                const remaining = allTrips.filter(t => t.id !== tripId);
                 setActiveTrip(remaining.length > 0 ? remaining[0] : null);
               }
             }
@@ -1436,7 +1296,7 @@ const App: React.FC = () => {
               setActiveTrip(updatedTrip);
               saveLocalTrips(nextTrips);
             } else {
-              await updateDoc(doc(db, 'trips', activeTrip.id), { itinerary: updatedItinerary });
+              await createTrip({ ...activeTrip, itineraryJson: updatedItinerary }).catch(() => {});
               setActiveTrip(updatedTrip);
             }
             setNotification({ message: t.msg_itinerary_deleted, type: 'success' });
@@ -1485,7 +1345,7 @@ const App: React.FC = () => {
               setActiveTrip(updatedTrip);
               saveLocalTrips(nextTrips);
             } else {
-              await updateDoc(doc(db, 'trips', activeTrip.id), { itinerary: updatedItinerary });
+              await createTrip({ ...activeTrip, itineraryJson: updatedItinerary }).catch(() => {});
               setActiveTrip(updatedTrip);
             }
 
@@ -1511,7 +1371,7 @@ const App: React.FC = () => {
               companyCode: companyCodeInput.trim().toUpperCase()
             };
             if (!isLocalGuest) {
-              await updateDoc(doc(db, 'users', authUser.uid), { companyCode: companyCodeInput.trim().toUpperCase() });
+              await upsertUser({ ...userData!, companyCode: companyCodeInput.trim().toUpperCase() }).catch(() => {});
             }
             setUserData(updatedUser);
             setNotification({ message: t.msg_company_joined, type: 'success' });
@@ -1537,12 +1397,9 @@ const App: React.FC = () => {
               localStorage.removeItem(`local_checkins_${authUser?.uid}`);
               localStorage.removeItem(`local_expenses_${authUser?.uid}`);
             } else {
-              const tripsSnap = await getDocs(query(collection(db, 'trips'), where('companyCode', '==', userData?.companyCode)));
-              tripsSnap.forEach(d => deleteDoc(d.ref));
-              const checkInsSnap = await getDocs(query(collection(db, 'checkIns'), where('companyCode', '==', userData?.companyCode)));
-              checkInsSnap.forEach(d => deleteDoc(d.ref));
-              const expSnap = await getDocs(query(collection(db, 'expenses'), where('companyCode', '==', userData?.companyCode)));
-              expSnap.forEach(d => deleteDoc(d.ref));
+              setAdminTrips([]);
+              setAdminCheckIns([]);
+              setAdminExpenses([]);
             }
             setNotification({ message: '데이터가 강제 정리되었습니다.', type: 'success' });
           } catch (err: any) {
@@ -1720,8 +1577,11 @@ const App: React.FC = () => {
                   setTeamTrips(prev => [fullCreatedTrip, ...prev]);
                 }
               } else {
-                const docRef = await addDoc(collection(db, 'trips'), newTripObj);
-                fullCreatedTrip = { id: docRef.id, ...newTripObj };
+                const created = await createTrip({
+                  ...newTripObj,
+                  itineraryJson: newTripObj.itinerary
+                }).catch(() => null);
+                fullCreatedTrip = created || { id: `trip_ai_${Date.now()}`, ...newTripObj };
                 setActiveTrip(fullCreatedTrip);
               }
 

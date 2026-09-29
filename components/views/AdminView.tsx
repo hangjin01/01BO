@@ -30,7 +30,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
       <div className="bg-orange-50 dark:bg-orange-950/30 p-4 rounded-xl border border-orange-100 dark:border-orange-800 flex items-center justify-between">
         <div>
           <p className="text-sm font-bold text-slate-800 dark:text-orange-300">{t.admin_company_code}</p>
-          <p className="text-xs text-brand-orange dark:text-brand-orange">Share this code with your employees.</p>
+          <p className="text-xs text-brand-orange dark:text-brand-orange">직원 초대는 설정 → 소속 관리에서 초대 코드를 발급하세요.</p>
         </div>
         <div className="text-xl font-black tracking-widest text-brand-orange dark:text-orange-200 bg-white dark:bg-gray-800 px-4 py-2 rounded-lg shadow-sm">
           {userData?.companyCode || 'N/A'}

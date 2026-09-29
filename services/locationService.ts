@@ -96,7 +96,5 @@ export const geocodeAddress = async (address: string): Promise<Coordinate> => {
     console.error('Error with Nominatim Geocoding:', err);
   }
 
-  // 3. Failover default coordinates
-  console.warn('Geocoding failover: Tokyo default coordinates applied');
-  return { latitude: 35.6812, longitude: 139.7671 };
+  throw new Error('주소의 위치를 확인할 수 없습니다. 상세 주소를 확인한 뒤 다시 시도해 주세요.');
 };

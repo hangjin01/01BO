@@ -1,3 +1,5 @@
+export type Lang = 'ko' | 'ja';
+
 export interface User {
   uid: string;
   email: string;

@@ -1,3 +1,4 @@
+import { isNativeApp, nativeSessionToken, saveNativeSession, clearNativeSession } from './nativeSession';
 import { 
   User, Trip, CheckInRecord, Expense, ItineraryItem, 
   BackendUser, BackendTrip, BackendCheckIn, BackendExpense, 
@@ -5,7 +6,14 @@ import {
 } from '../types';
 
 // API Base URL from Vite environment or default fallback
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:3000/api';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || '/api';
+
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
 
 /**
  * 보안 유틸리티: XSS 방지를 위한 기본 입력값 인코딩/정제
@@ -25,26 +33,28 @@ export const sanitizeString = (str: string): string => {
  * 좌표 유효성 검증 (GPS 위도 -90~90, 경도 -180~180)
  */
 export const validateCoordinates = (lat?: number | string | null, lng?: number | string | null): { latitude: number; longitude: number } => {
-  const latitude = typeof lat === 'number' ? lat : parseFloat(String(lat || 35.6762));
-  const longitude = typeof lng === 'number' ? lng : parseFloat(String(lng || 139.6503));
-
-  const safeLat = isNaN(latitude) || latitude < -90 || latitude > 90 ? 35.6762 : latitude;
-  const safeLng = isNaN(longitude) || longitude < -180 || longitude > 180 ? 139.6503 : longitude;
-
-  return { latitude: safeLat, longitude: safeLng };
+  const latitude = lat === null || lat === undefined || lat === '' ? NaN : Number(lat);
+  const longitude = lng === null || lng === undefined || lng === '' ? NaN : Number(lng);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+    throw new Error('유효한 위치 좌표가 필요합니다.');
+  }
+  return { latitude, longitude };
 };
 
 // --- 공통 HTTP 요청 처리 함수 ---
-async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
+  if (isNativeApp() && !/^https:\/\//i.test(API_BASE_URL)) throw new Error('앱 서버의 HTTPS 주소 설정이 필요합니다.');
+  const nativeToken = await nativeSessionToken();
   const headers = {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
+    ...(nativeToken ? { Authorization: `Bearer ${nativeToken}` } : {}),
     ...(options.headers || {}),
   };
 
   try {
-    const response = await fetch(url, { ...options, headers });
+    const response = await fetch(url, { credentials: 'include', ...options, signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000), headers });
     
     if (!response.ok) {
       let errorMessage = `HTTP Error ${response.status}: ${response.statusText}`;
@@ -54,10 +64,14 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
           errorMessage = errorData.message;
         }
       } catch (_) {}
-      throw new Error(errorMessage);
+      if (response.status === 401 && endpoint === '/auth/me') await clearNativeSession();
+      throw new ApiError(errorMessage, response.status);
     }
 
-    return await response.json() as T;
+    if (response.status === 204) return undefined as T;
+    const result = await response.json();
+    if (result?.success === false) throw new Error(result.message || '요청을 처리하지 못했습니다.');
+    return result as T;
   } catch (error: any) {
     // 민감 정보 노출 방지: 콘솔에는 정제된 오류 메시지만 출력
     console.error(`[API Call Failed] Endpoint: ${endpoint}`, error?.message || 'Network error');
@@ -178,8 +192,8 @@ export async function fetchExchangeRate(jpy: number = 0): Promise<ExchangeRateRe
 
 // --- 4.2. 사용자 관리 API ---
 
-export async function fetchUsers(): Promise<User[]> {
-  const res = await apiFetch<{ success: boolean; data: BackendUser[] }>('/users');
+export async function fetchUsers(companyCode?: string): Promise<User[]> {
+  const res = await apiFetch<{ success: boolean; data: BackendUser[] }>(`/users${companyCode ? '?companyCode=' + encodeURIComponent(companyCode) : ''}`);
   if (res.success && Array.isArray(res.data)) {
     return res.data.map(transformBackendUser);
   }
@@ -217,18 +231,8 @@ export async function upsertUser(user: {
     body: JSON.stringify(payload),
   });
 
-  if (res.data && res.data.UID_VAL) {
-    return transformBackendUser(res.data);
-  } else {
-    return {
-      uid: user.uid,
-      email: user.email,
-      name: user.name,
-      role: user.role || 'employee',
-      companyCode: user.companyCode || 'COMP01',
-      teamCode: user.teamCode || 'TEAM01',
-    };
-  }
+  if (!res.data || !res.data.UID_VAL) throw new Error('서버에서 저장된 데이터를 반환하지 않았습니다.');
+  return transformBackendUser(res.data);
 }
 
 // --- 4.3. 출장 일정 API ---
@@ -305,25 +309,8 @@ export async function createTrip(tripData: {
     body: JSON.stringify(payload),
   });
 
-  if (res.data && res.data.ID) {
-    return transformBackendTrip(res.data);
-  } else {
-    return {
-      id: payload.id,
-      userId: payload.userId,
-      title: payload.title,
-      status: payload.status as any,
-      startDate: payload.startDate,
-      endDate: payload.endDate,
-      destination: payload.destination,
-      itinerary: Array.isArray(tripData.itineraryJson) ? tripData.itineraryJson : [],
-      purpose: tripData.purpose,
-      report: tripData.report,
-      companyCode: payload.companyCode,
-      teamCode: payload.teamCode,
-      isSharedWithTeam: tripData.isSharedWithTeam ? true : false,
-    };
-  }
+  if (!res.data || !res.data.ID) throw new Error('서버에서 저장된 데이터를 반환하지 않았습니다.');
+  return transformBackendTrip(res.data);
 }
 
 export async function fetchTripSummary(id: string, rate: number = 9.15): Promise<{
@@ -351,9 +338,11 @@ export async function fetchTripSummary(id: string, rate: number = 9.15): Promise
 export async function fetchCheckIns(params?: {
   tripId?: string;
   userId?: string;
+  companyCode?: string;
 }): Promise<CheckInRecord[]> {
   const query = new URLSearchParams();
   if (params?.tripId) query.append('tripId', params.tripId);
+  if (params?.companyCode) query.append('companyCode', params.companyCode);
   if (params?.userId) query.append('userId', params.userId);
 
   const queryString = query.toString() ? `?${query.toString()}` : '';
@@ -401,23 +390,8 @@ export async function createCheckIn(checkInData: {
     body: JSON.stringify(payload),
   });
 
-  if (res.data && res.data.ID) {
-    return transformBackendCheckIn(res.data);
-  } else {
-    return {
-      id: payload.id,
-      userId: payload.userId,
-      tripId: payload.tripId,
-      timestamp: payload.tsMillis,
-      locationName: payload.locationName,
-      coords,
-      type: payload.typeVal as any,
-      verified: payload.verified === 1,
-      itineraryItemId: checkInData.itineraryItemId,
-      companyCode: payload.companyCode,
-      nfcTagId: checkInData.nfcTagId,
-    };
-  }
+  if (!res.data || !res.data.ID) throw new Error('서버에서 저장된 데이터를 반환하지 않았습니다.');
+  return transformBackendCheckIn(res.data);
 }
 
 // --- 4.5. 경비 정산 API ---
@@ -426,9 +400,11 @@ export async function fetchExpenses(params?: {
   tripId?: string;
   userId?: string;
   category?: string;
+  companyCode?: string;
 }): Promise<Expense[]> {
   const query = new URLSearchParams();
   if (params?.tripId) query.append('tripId', params.tripId);
+  if (params?.companyCode) query.append('companyCode', params.companyCode);
   if (params?.userId) query.append('userId', params.userId);
   if (params?.category) query.append('category', params.category);
 
@@ -472,21 +448,8 @@ export async function createExpense(expenseData: {
     body: JSON.stringify(payload),
   });
 
-  if (res.data && res.data.ID) {
-    return transformBackendExpense(res.data);
-  } else {
-    return {
-      id: payload.id,
-      userId: payload.userId,
-      tripId: payload.tripId,
-      date: payload.expenseDate,
-      merchant: payload.merchant,
-      amount: payload.amount,
-      category: payload.category,
-      imageUrl: expenseData.imageUrl,
-      companyCode: payload.companyCode,
-    };
-  }
+  if (!res.data || !res.data.ID) throw new Error('서버에서 저장된 데이터를 반환하지 않았습니다.');
+  return transformBackendExpense(res.data);
 }
 
 export async function deleteExpense(id: string): Promise<boolean> {
@@ -494,5 +457,86 @@ export async function deleteExpense(id: string): Promise<boolean> {
   const res = await apiFetch<{ success: boolean; message?: string }>(`/expenses/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   });
-  return res.success === true;
+  return res === undefined || res.success === true;
+}
+
+// These endpoints require the corresponding AWS server implementation.
+export async function updateTrip(trip: Trip): Promise<Trip> {
+  const result = await apiFetch<{ success: boolean; data: BackendTrip }>(`/trips/${encodeURIComponent(trip.id)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ ...trip, itineraryJson: JSON.stringify(trip.itinerary), isSharedWithTeam: trip.isSharedWithTeam ? 1 : 0 }),
+  });
+  if (!result?.success || !result.data?.ID) throw new Error('서버에서 저장된 출장 데이터를 반환하지 않았습니다.');
+  return transformBackendTrip(result.data);
+}
+
+export async function deleteTrip(id: string): Promise<void> {
+  await apiFetch(`/trips/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export async function sendReportEmail(tripId: string, recipient: string, report: string): Promise<void> {
+  await apiFetch(`/trips/${encodeURIComponent(tripId)}/report/email`, {
+    method: 'POST', body: JSON.stringify({ recipient, report }),
+  });
+}
+
+export async function fetchSessionUser(): Promise<User> {
+  const result = await apiFetch<{ success: boolean; data: BackendUser }>('/auth/me');
+  if (!result?.success || !result.data?.UID_VAL) throw new Error('서버 로그인 세션이 필요합니다.');
+  return transformBackendUser(result.data);
+}
+
+export async function updateMembership(endpoint: '/teams' | '/teams/join' | '/companies/join', code?: string): Promise<User> {
+  const result = await apiFetch<{ success: boolean; data: BackendUser }>(endpoint, { method: 'POST', body: JSON.stringify(code ? { code } : {}) });
+  if (!result?.success || !result.data?.UID_VAL) throw new Error('서버에서 확인된 소속 정보를 반환하지 않았습니다.');
+  return transformBackendUser(result.data);
+}
+export async function updateProfile(name: string): Promise<User> {
+  const result = await apiFetch<{ success: boolean; data: BackendUser }>('/users/me', { method: 'PATCH', body: JSON.stringify({ name }) });
+  if (!result?.success || !result.data?.UID_VAL) throw new Error('프로필 저장 결과를 확인하지 못했습니다.');
+  return transformBackendUser(result.data);
+}
+export async function endSession(): Promise<void> {
+  await apiFetch('/auth/logout', { method: 'POST' });
+  await clearNativeSession();
+}
+
+export async function exchangeSessionCode(code: string): Promise<User> {
+  const base = new URL(API_BASE_URL, window.location.href);
+  if (base.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(base.hostname)) {
+    throw new Error('로그인 코드는 HTTPS 또는 SSH 터널의 localhost 주소에서만 사용할 수 있습니다.');
+  }
+  const result = await apiFetch<{ success: boolean; data: BackendUser }>('/auth/exchange', { method: 'POST', body: JSON.stringify({ code }) });
+  if (!result?.success || !result.data?.UID_VAL) throw new Error('로그인 결과를 확인하지 못했습니다.');
+  return transformBackendUser(result.data);
+}
+
+export async function createCompany(companyName: string, ownerName: string): Promise<User> {
+  const result = await apiFetch<{ success: boolean; data: BackendUser }>('/companies', {
+    method: 'POST', body: JSON.stringify({ companyName, ownerName }),
+  });
+  if (!result?.success || !result.data?.UID_VAL || !result.data.COMPANY_CODE || result.data.ROLE !== 'admin') {
+    throw new Error('회사 생성 결과를 확인하지 못했습니다. 다시 로그인해 소속을 확인해 주세요.');
+  }
+  return transformBackendUser(result.data);
+}
+
+export async function passwordAuth(mode: 'login' | 'register', email: string, password: string, name?: string): Promise<User> {
+  const base = new URL(API_BASE_URL, window.location.href);
+  if (base.protocol !== 'https:' && (isNativeApp() || !['localhost', '127.0.0.1', '[::1]'].includes(base.hostname))) {
+    throw new Error('HTTPS 연결에서 로그인해 주세요.');
+  }
+  const result = await apiFetch<{ data: BackendUser; sessionToken?: string; expiresAt: number }>(`/auth/${mode}`, {
+    method: 'POST', body: JSON.stringify({ email, password, ...(mode === 'register' ? { name } : {}), sessionMode: isNativeApp() ? 'native' : 'web' }),
+  });
+  if (!result.data?.UID_VAL) throw new Error('로그인 결과를 확인하지 못했습니다.');
+  if (isNativeApp()) {
+    if (!result.sessionToken) throw new Error('앱 로그인 세션이 없습니다.');
+    try { await saveNativeSession(result.sessionToken, result.expiresAt); }
+    catch (error) {
+      await apiFetch('/auth/logout', { method: 'POST', headers: { Authorization: `Bearer ${result.sessionToken}` } }).catch(() => {});
+      throw error;
+    }
+  }
+  return transformBackendUser(result.data);
 }

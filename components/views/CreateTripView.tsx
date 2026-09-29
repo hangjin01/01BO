@@ -4,6 +4,7 @@ import { IconChevronRight, IconUserCheck } from '../Icons';
 
 interface CreateTripViewProps {
   t: any;
+  loading: boolean;
   tripCreationSource: ViewState | null;
   newTripData: { title: string; destination: string; startDate: string; endDate: string; purpose: string; isSharedWithTeam?: boolean };
   setNewTripData: React.Dispatch<React.SetStateAction<{ title: string; destination: string; startDate: string; endDate: string; purpose: string; isSharedWithTeam?: boolean }>>;
@@ -13,6 +14,7 @@ interface CreateTripViewProps {
 
 export const CreateTripView: React.FC<CreateTripViewProps> = ({
   t,
+  loading,
   tripCreationSource,
   newTripData,
   setNewTripData,
@@ -86,26 +88,11 @@ export const CreateTripView: React.FC<CreateTripViewProps> = ({
           />
         </div>
 
-        {/* Team Sharing Switch */}
-        <div className="bg-orange-50/50 dark:bg-orange-950/20 p-3 rounded-xl border border-orange-100 dark:border-orange-900/40 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <IconUserCheck className="w-5 h-5 text-brand-orange" />
-            <div>
-              <p className="text-xs font-bold text-gray-800 dark:text-gray-100">팀원들과 이 출장 일정 공유하기</p>
-              <p className="text-[10px] text-gray-500 dark:text-gray-400">동일한 팀 코드를 가진 팀원들의 대시보드에 공개됩니다.</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setNewTripData({ ...newTripData, isSharedWithTeam: !(newTripData.isSharedWithTeam ?? true) })}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${ (newTripData.isSharedWithTeam ?? true) ? 'bg-brand-orange' : 'bg-gray-300 dark:bg-gray-600' }`}
-          >
-            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${(newTripData.isSharedWithTeam ?? true) ? 'translate-x-6' : 'translate-x-1'}`} />
-          </button>
-        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400">저장한 출장은 본인과 회사 사장만 확인할 수 있습니다.</p>
 
         <button 
           onClick={handleSaveTrip}
+          disabled={loading}
           className="w-full bg-brand-orange hover:bg-orange-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-orange-500/20 active:scale-95 transition-transform text-xs"
         >
           {t.btn_save_trip}

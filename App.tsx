@@ -1,10 +1,15 @@
+import { PasswordLogin } from './components/PasswordLogin';
+import { CompanyMembership } from './components/CompanyMembership';
+import { ExpenseReview, ExpenseDraft } from './components/ExpenseReview';
+import { assertDate, assertTripDates, normalizeItinerary } from './services/tripValidation';
+import { createReportDocx } from './services/reportExport';
 import React, { useState, useEffect, useRef } from 'react';
 import { Trip, ViewState, Coordinate, CheckInRecord, Expense, ItineraryItem, User, TripSummary } from './types';
 import { getCurrentPosition, calculateDistance, geocodeAddress } from './services/locationService';
-import { analyzeReceiptImage, generateTripReport, generateTripFromChat, adjustTripItinerary } from './services/geminiService';
+import { analyzeReceiptImage, generateTripReport, adjustTripItinerary } from './services/geminiService';
 import {
-  fetchHealth, fetchExchangeRate, fetchUsers, fetchUserByUid, upsertUser,
-  fetchTrips, fetchTripById, createTrip, fetchTripSummary,
+  ApiError, fetchHealth, fetchExchangeRate, fetchUsers,
+  fetchTrips, fetchTripById, createTrip, fetchTripSummary, updateTrip, deleteTrip, sendReportEmail, sanitizeString, fetchSessionUser, updateMembership, updateProfile, endSession,
   fetchCheckIns, createCheckIn, fetchExpenses, createExpense, deleteExpense
 } from './services/apiService';
 
@@ -97,7 +102,7 @@ const TRANSLATIONS = {
     quick_meeting: "会議室・ミーティング",
     quick_trans: "現地交通・レンタカー",
     explore_destinations: "人気出張先",
-    recent_activity_title: "リアルタイム活動フィード",
+    recent_activity_title: "最近の活動フィード",
     tab_list: "リスト",
     tab_map: "マップ",
     btn_navigate: "経路案内",
@@ -114,7 +119,7 @@ const TRANSLATIONS = {
     company_code_desc: "管理者が発行した会社コードを入力してください。",
     btn_join_company: "参加する",
     msg_company_joined: "会社に参加しました",
-    admin_company_code: "あなたの会社コード (招待用):",
+    admin_company_code: "会社識別コード:",
     chart_title: "経費内訳",
     chart_total: "合計",
     ai_bot_title: "AIアシスタント",
@@ -124,18 +129,15 @@ const TRANSLATIONS = {
     ai_bot_success: "スケジュールを作成しました！",
     ai_bot_error: "スケジュールの作成に失敗しました。",
     wake_word_enable: "音声ウェイクアップ",
-    wake_word_listening: "「하이 제로보」待機中",
+    wake_word_listening: "音声入力中",
     theme_title: "テーマ設定",
     theme_light: "ライトモード",
     theme_dark: "ダークモード",
-    btn_guest_login: "テストアカウントでログイン (ローカル)",
     nfc_title: "NFC チェックアウト認証",
     nfc_waiting: "デバイスの背面をNFCタグに近づけてください。",
     nfc_success: "NFC認証が完了しました！",
     nfc_error: "NFCの読み取りに失敗しました。再試行してください。",
-    nfc_mock_btn: "NFC模擬タグ接触 (シミュレーション)",
     nfc_gps_warning: "目的地から離れています（現在距離: {dist}m）。50m以内にいる必要があります。",
-    nfc_gps_bypass: "位置制限をバイパス (テスト用)",
     nfc_unsupported: "このデバイス/ブラウザはWeb NFCをサポートしていません。",
     btn_manual_checkout: "手動チェックアウト",
     btn_nfc_checkout: "NFCチェックアウト",
@@ -212,7 +214,7 @@ const TRANSLATIONS = {
     quick_meeting: "회의실 · 미팅룸",
     quick_trans: "현지 교통 · 렌터카",
     explore_destinations: "인기 출장지",
-    recent_activity_title: "실시간 활동 피드",
+    recent_activity_title: "최근 활동 기록",
     tab_list: "목록",
     tab_map: "지도",
     btn_navigate: "길찾기",
@@ -229,7 +231,7 @@ const TRANSLATIONS = {
     company_code_desc: "관리자가 발급한 회사 코드를 입력해주세요.",
     btn_join_company: "참여하기",
     msg_company_joined: "회사에 참여했습니다",
-    admin_company_code: "나의 회사 코드 (초대용):",
+    admin_company_code: "회사 식별 코드:",
     chart_title: "경비 내역",
     chart_total: "합계",
     ai_bot_title: "AI 어시스턴트",
@@ -239,18 +241,15 @@ const TRANSLATIONS = {
     ai_bot_success: "일정이 작성되었습니다!",
     ai_bot_error: "일정 작성에 실패했습니다.",
     wake_word_enable: "음성 호출",
-    wake_word_listening: "「하이 제로보」 대기 중",
+    wake_word_listening: "음성 입력 중",
     theme_title: "테마 설정",
     theme_light: "라이트 모드",
     theme_dark: "다크 모드",
-    btn_guest_login: "테스트 계정으로 로그인 (로컬 모드)",
     nfc_title: "NFC 체크아웃 인증",
     nfc_waiting: "스마트폰 뒷면을 현장의 NFC 태그 스티커에 접촉해 주세요.",
     nfc_success: "NFC 물리 인증 성공!",
     nfc_error: "NFC 리딩 도중 오류가 발생했습니다. 다시 시도해 주세요.",
-    nfc_mock_btn: "NFC 모의 태그 접촉 (시뮬레이션)",
     nfc_gps_warning: "목적지에서 너무 멀리 떨어져 있습니다. (현재 거리: {dist}m, 제한: 50m)",
-    nfc_gps_bypass: "위치 제한 우회 (테스트용)",
     nfc_unsupported: "이 브라우저/디바이스는 Web NFC 기능을 지원하지 않습니다.",
     btn_manual_checkout: "수동 체크아웃",
     btn_nfc_checkout: "NFC 체크아웃",
@@ -318,12 +317,11 @@ const App: React.FC = () => {
   const [authUser, setAuthUser] = useState<{ uid: string; email: string; displayName?: string } | null>(null);
   const [userData, setUserData] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
-  const [isLocalGuest, setIsLocalGuest] = useState<boolean>(false);
 
   // State
   const [view, setView] = useState<ViewState>(ViewState.HOME);
-  const [language, setLanguage] = useState<Lang>('ko');
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [language, setLanguage] = useState<Lang>(() => localStorage.getItem('o1bo_language') === 'ja' ? 'ja' : 'ko');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => localStorage.getItem('o1bo_theme') === 'dark' ? 'dark' : 'light');
 
   // Multi-trip States
   const [allTrips, setAllTrips] = useState<Trip[]>([]);
@@ -349,6 +347,7 @@ const App: React.FC = () => {
   // Check-ins & Expenses
   const [checkIns, setCheckIns] = useState<CheckInRecord[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expenseDraft, setExpenseDraft] = useState<ExpenseDraft | null>(null);
 
   // Admin Dashboard States
   const [adminTrips, setAdminTrips] = useState<Trip[]>([]);
@@ -357,13 +356,11 @@ const App: React.FC = () => {
   const [companyUsers, setCompanyUsers] = useState<Record<string, User>>({});
 
   // Form Inputs
-  const [companyCodeInput, setCompanyCodeInput] = useState('');
   const [recipientEmail, setRecipientEmail] = useState('');
 
   // UI States
   const [loading, setLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [generatedReport, setGeneratedReport] = useState<string>('');
   const [reportPrompt, setReportPrompt] = useState<string>('');
@@ -375,8 +372,6 @@ const App: React.FC = () => {
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [showAIChat, setShowAIChat] = useState(false);
   const [aiChatInput, setAiChatInput] = useState('');
-  const [isAiProcessing, setIsAiProcessing] = useState(false);
-  const [generatedTripForShare, setGeneratedTripForShare] = useState<Trip | null>(null);
 
   // Date Range Filter & Map View States
   const [durationFilter, setDurationFilter] = useState<'all' | '1day' | '1week' | '1month' | 'custom'>('all');
@@ -406,19 +401,36 @@ const App: React.FC = () => {
   } | null>(null);
 
   // Voice Wake-Word State
-  const [isWakeWordEnabled, setIsWakeWordEnabled] = useState(false);
   const [isListening, setIsListening] = useState(false);
 
   // Kakao Sharing App Key State
   const [kakaoAppKey, setKakaoAppKey] = useState(() => {
-    return localStorage.getItem('o1bo_kakao_app_key') || 'd301db54bb88cfde9fba5ec2136e090f';
+    return localStorage.getItem('o1bo_kakao_app_key') || '';
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
+  const nfcControllerRef = useRef<AbortController | null>(null);
 
   const t = TRANSLATIONS[language];
+
+  useEffect(() => { localStorage.setItem('o1bo_language', language); }, [language]);
+  useEffect(() => { localStorage.setItem('o1bo_theme', theme); }, [theme]);
+  useEffect(() => { localStorage.setItem('o1bo_nfc_checkout_enabled', String(isNfcCheckoutEnabled)); }, [isNfcCheckoutEnabled]);
+  useEffect(() => { localStorage.setItem('o1bo_kakao_app_key', kakaoAppKey); }, [kakaoAppKey]);
+  useEffect(() => {
+    if (userData) {
+      localStorage.setItem('o1bo_current_user', JSON.stringify(userData));
+
+    }
+  }, [userData]);
+
+  useEffect(() => {
+    if (!nfcModal?.show) nfcControllerRef.current?.abort();
+    return () => { nfcControllerRef.current?.abort(); };
+  }, [nfcModal?.show]);
+  useEffect(() => () => { recognitionRef.current?.stop(); }, []);
 
   // Sync profile name to input
   useEffect(() => {
@@ -451,61 +463,30 @@ const App: React.FC = () => {
     }
   };
 
-  // Local Guest Data Handlers
-  const saveLocalTrips = (trips: Trip[]) => {
-    if (localStorage.getItem('is_local_guest') === 'true' && authUser) {
-      localStorage.setItem(`local_trips_${authUser.uid}`, JSON.stringify(trips));
-    }
-  };
-  const saveLocalCheckIns = (records: CheckInRecord[]) => {
-    if (localStorage.getItem('is_local_guest') === 'true' && authUser) {
-      localStorage.setItem(`local_checkins_${authUser.uid}`, JSON.stringify(records));
-    }
-  };
-  const saveLocalExpenses = (expList: Expense[]) => {
-    if (localStorage.getItem('is_local_guest') === 'true' && authUser) {
-      localStorage.setItem(`local_expenses_${authUser.uid}`, JSON.stringify(expList));
-    }
-  };
-
-  // Auth Session Init (AWS Oracle DB REST API & Local Session)
+  // Server session is the only source of identity; never restore a local test account.
   useEffect(() => {
+    let cancelled = false;
     const initAuthSession = async () => {
-      const savedUserStr = localStorage.getItem('o1bo_current_user');
-      const isGuest = localStorage.getItem('is_local_guest') === 'true';
-      setIsLocalGuest(isGuest);
-
-      if (savedUserStr) {
-        try {
-          const parsedUser: User = JSON.parse(savedUserStr);
-          setAuthUser({ uid: parsedUser.uid, email: parsedUser.email, displayName: parsedUser.name });
-          const dbUser = await fetchUserByUid(parsedUser.uid).catch(() => null);
-          setUserData(dbUser || parsedUser);
-        } catch (_) {
-          setAuthUser(null);
-          setUserData(null);
+      localStorage.removeItem('is_local_guest');
+      localStorage.removeItem('o1bo_current_user');
+      try {
+        const user = await fetchSessionUser();
+        if (cancelled) return;
+        setAuthUser({ uid: user.uid, email: user.email, displayName: user.name });
+        setUserData(user);
+      } catch (error) {
+        if (cancelled) return;
+        setAuthUser(null);
+        setUserData(null);
+        if (!(error instanceof ApiError && error.status === 401)) {
+          setNotification({ message: error instanceof Error ? error.message : '서버 연결을 확인해 주세요.', type: 'error' });
         }
-      } else if (isGuest) {
-        const guestUid = 'guest_user_01bo';
-        const guestUserObj: User = {
-          uid: guestUid,
-          email: 'guest@01bo.local',
-          name: 'Test Account',
-          role: 'admin',
-          companyCode: 'O1BO01'
-        };
-        setAuthUser({ uid: guestUid, email: guestUserObj.email, displayName: guestUserObj.name });
-        setUserData(guestUserObj);
+      } finally {
+        if (!cancelled) setIsAuthReady(true);
       }
-      setIsAuthReady(true);
     };
-
     initAuthSession();
-  }, []);
-      setIsAuthReady(true);
-    });
-
-    return () => unsubscribe();
+    return () => { cancelled = true; };
   }, []);
 
   // Kakao SDK Init
@@ -535,202 +516,76 @@ const App: React.FC = () => {
 
   // REST API Sync Effect: Load data from REST API backend
   useEffect(() => {
-    if (!authUser) return;
+    setAiChatInput(''); setShowAIChat(false);
+    recognitionRef.current?.stop();
+    setAllTrips([]); setActiveTrip(null); setCheckIns([]); setExpenses([]);
+    setTeamTrips([]); setTeamMembers([]); setCompanyUsers({});
+    setAdminTrips([]); setAdminCheckIns([]); setAdminExpenses([]);
+    if (!authUser || !userData?.companyCode) return;
 
     let isMounted = true;
 
     const loadRestApiData = async () => {
       try {
-        // 1. Sync User to REST API backend
-        if (userData) {
-          await upsertUser({
-            uid: userData.uid,
-            email: userData.email,
-            name: userData.name,
-            role: userData.role,
-            companyCode: userData.companyCode || 'COMP01',
-            teamCode: userData.teamCode || 'TEAM01'
-          }).catch(err => console.warn('[REST API User Sync Warning]', err.message));
+        const companyCode = userData?.companyCode;
+        const [visibleTrips, users, apiCheckIns, apiExpenses] = await Promise.all([
+          fetchTrips(), fetchUsers(), fetchCheckIns({ userId: authUser.uid }), fetchExpenses({ userId: authUser.uid })
+        ]);
+        if (!isMounted) return;
+        const usersById = Object.fromEntries(users.map(user => [user.uid, user]));
+        const trips = visibleTrips.map(trip => ({ ...trip, userName: usersById[trip.userId]?.name, userEmail: usersById[trip.userId]?.email }));
+        const ownTrips = trips.filter(trip => trip.userId === authUser.uid);
+        setAllTrips(ownTrips);
+        setActiveTrip(previous => ownTrips.find(trip => trip.id === previous?.id) || ownTrips[0] || null);
+        setCheckIns(apiCheckIns);
+        setExpenses(apiExpenses);
+        setTeamMembers(userData?.teamCode ? users.filter(user => user.teamCode === userData.teamCode) : []);
+        setTeamTrips(userData?.role === 'admin' ? trips.filter(trip => trip.userId !== authUser.uid) : []);
+        if (userData?.role === 'admin' && companyCode) {
+          const [records, companyExpenses] = await Promise.all([
+            fetchCheckIns({ companyCode }), fetchExpenses({ companyCode })
+          ]);
+          if (!isMounted) return;
+          setCompanyUsers(usersById);
+          setAdminTrips(trips);
+          setAdminCheckIns(records);
+          setAdminExpenses(companyExpenses);
+        } else {
+          setCompanyUsers({}); setAdminTrips([]); setAdminCheckIns([]); setAdminExpenses([]);
         }
-
-        // 2. Fetch Trips from GET /api/trips
-        const apiTrips = await fetchTrips({ userId: authUser.uid }).catch(() => []);
-        if (isMounted && apiTrips.length > 0) {
-          setAllTrips(apiTrips);
-          if (!activeTrip) {
-            setActiveTrip(apiTrips[0]);
-          }
-        }
-
-        // 3. Fetch Check-Ins from GET /api/check-ins
-        const apiCheckIns = await fetchCheckIns({ userId: authUser.uid }).catch(() => []);
-        if (isMounted && apiCheckIns.length > 0) {
-          setCheckIns(apiCheckIns);
-        }
-
-        // 4. Fetch Expenses from GET /api/expenses
-        const apiExpenses = await fetchExpenses({ userId: authUser.uid }).catch(() => []);
-        if (isMounted && apiExpenses.length > 0) {
-          setExpenses(apiExpenses);
-        }
-
-        // 5. Admin Data Loading from REST API
-        if (userData?.role === 'admin' && userData.companyCode) {
-          const allUsers = await fetchUsers().catch(() => []);
-          if (isMounted && allUsers.length > 0) {
-            const userMap: Record<string, User> = {};
-            allUsers.forEach(u => { userMap[u.uid] = u; });
-            setCompanyUsers(userMap);
-          }
-
-          const compTrips = await fetchTrips({ companyCode: userData.companyCode }).catch(() => []);
-          if (isMounted && compTrips.length > 0) setAdminTrips(compTrips);
-
-          const compCheckIns = await fetchCheckIns().catch(() => []);
-          if (isMounted && compCheckIns.length > 0) setAdminCheckIns(compCheckIns);
-
-          const compExpenses = await fetchExpenses().catch(() => []);
-          if (isMounted && compExpenses.length > 0) setAdminExpenses(compExpenses);
-        }
-
-      } catch (err: any) {
-        console.warn('[REST API Backend Load Failed - Fallback active]', err?.message);
+      } catch (error) {
+        if (isMounted) setNotification({ message: error instanceof Error ? error.message : '데이터를 불러오지 못했습니다.', type: 'error' });
       }
     };
 
     loadRestApiData();
 
     return () => { isMounted = false; };
-  }, [authUser?.uid, userData?.role, userData?.companyCode]);
+  }, [authUser?.uid, userData?.role, userData?.companyCode, userData?.teamCode]);
 
 
+
+  useEffect(() => { setGeneratedReport(activeTrip?.report || ''); }, [activeTrip?.id]);
 
   // Handlers & Logic
-  const handleLogin = async () => {
-    setIsLoggingIn(true);
-    try {
-      localStorage.removeItem('is_local_guest');
-      setIsLocalGuest(false);
-
-      const userUid = 'usr_' + Date.now();
-      const newAuthUser = {
-        uid: userUid,
-        email: 'user@01bo.com',
-        displayName: '출장 사원'
-      };
-
-      const dbUser = await upsertUser({
-        uid: userUid,
-        email: newAuthUser.email,
-        name: newAuthUser.displayName,
-        role: 'employee',
-        companyCode: 'COMP01',
-        teamCode: 'TEAM01'
-      }).catch(() => ({
-        uid: userUid,
-        email: newAuthUser.email,
-        name: newAuthUser.displayName,
-        role: 'employee' as const,
-        companyCode: 'COMP01',
-        teamCode: 'TEAM01'
-      }));
-
-      localStorage.setItem('o1bo_current_user', JSON.stringify(dbUser));
-      setAuthUser(newAuthUser);
-      setUserData(dbUser);
-      setNotification({ message: 'AWS Oracle DB 계정으로 로그인되었습니다.', type: 'success' });
-    } catch (err: any) {
-      setNotification({ message: err.message || '로그인 중 오류가 발생했습니다.', type: 'error' });
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  const handleGuestLogin = () => {
-    setIsLoggingIn(true);
-    try {
-      localStorage.setItem('is_local_guest', 'true');
-      setIsLocalGuest(true);
-
-      const mockUid = 'guest_user_01bo';
-      const mockUser: User = {
-        uid: mockUid,
-        email: 'guest@01bo.local',
-        name: 'Test Account',
-        role: 'admin',
-        companyCode: 'O1BO01'
-      };
-
-      setAuthUser({
-        uid: mockUid,
-        email: 'guest@01bo.local',
-        displayName: 'Test Account'
-      } as any);
-
-      setUserData(mockUser);
-
-      const defaultTrips: Trip[] = [
-        {
-          id: 'trip_tokyo_demo',
-          userId: mockUid,
-          userName: 'Test Account',
-          companyCode: 'O1BO01',
-          title: '도쿄 비즈니스 미팅 및 현지 점검',
-          destination: 'Tokyo, Japan',
-          startDate: '2026-08-25',
-          endDate: '2026-08-27',
-          purpose: '파트너사 미팅 및 신규 거점 현장 점검',
-          status: 'active',
-          isSharedWithTeam: true,
-          itinerary: [
-            {
-              id: 'item_1',
-              locationName: '도쿄역 신칸센 승강장',
-              address: '1 Chome-9 Marunouchi, Chiyoda City, Tokyo 100-0005',
-              scheduledTime: '09:00',
-              coords: { latitude: 35.6812, longitude: 139.7671 },
-              date: '2026-08-25'
-            },
-            {
-              id: 'item_2',
-              locationName: '도쿄 팰리스 호텔 비즈니스 라운지',
-              address: '1-1-1 Marunouchi, Chiyoda City, Tokyo 100-0005',
-              scheduledTime: '11:30',
-              coords: { latitude: 35.6842, longitude: 139.7628 },
-              date: '2026-08-25'
-            },
-            {
-              id: 'item_3',
-              locationName: '시부야 스카이 오피스 타워',
-              address: '2-24-12 Shibuya, Shibuya City, Tokyo 150-0002',
-              scheduledTime: '15:00',
-              coords: { latitude: 35.6585, longitude: 139.7013 },
-              date: '2026-08-25'
-            }
-          ]
-        }
-      ];
-
-      setAllTrips(defaultTrips);
-      setActiveTrip(defaultTrips[0]);
-      saveLocalTrips(defaultTrips);
-      setNotification({ message: '테스트 계정으로 로그인되었습니다.', type: 'success' });
-    } catch (_) {
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
   const handleLogout = async () => {
+    {
+      try { await endSession(); } catch {
+        setNotification({ message: '서버 로그아웃에 실패했습니다. 다시 시도해 주세요.', type: 'error' });
+        return;
+      }
+    }
     localStorage.removeItem('is_local_guest');
     localStorage.removeItem('o1bo_current_user');
-    setIsLocalGuest(false);
     setAuthUser(null);
     setUserData(null);
     setAllTrips([]);
     setCheckIns([]);
     setExpenses([]);
     setActiveTrip(null);
+    setTeamTrips([]); setTeamMembers([]); setCompanyUsers({});
+    setAdminTrips([]); setAdminCheckIns([]); setAdminExpenses([]);
+    setGeneratedReport('');
     setView(ViewState.HOME);
   };
 
@@ -741,19 +596,9 @@ const App: React.FC = () => {
     setLoading(true);
 
     try {
-      const updatedUser: User = {
-        ...userData!,
-        name: newName
-      };
-
-      if (isLocalGuest) {
-        setUserData(updatedUser);
-        localStorage.setItem(`local_user_${authUser.uid}`, JSON.stringify(updatedUser));
-        // Update local team members list with new name
-        setTeamMembers(prev => prev.map(m => m.uid === authUser.uid ? updatedUser : m));
-      } else {
-        await upsertUser({ ...userData!, name: newName }).catch(() => {});
-        setUserData(updatedUser);
+      {
+        const saved = await updateProfile(newName);
+        setUserData(saved);
       }
 
       setNotification({ message: `👤 닉네임이 [${newName}] (으)로 변경되었습니다.`, type: 'success' });
@@ -767,1270 +612,1082 @@ const App: React.FC = () => {
   // Team Code Generator & Join Handlers
   const handleGenerateTeamCode = async () => {
     if (!authUser) return;
-    const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    let randomStr = '';
-    for (let i = 0; i < 6; i++) {
-      randomStr += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    const generatedCode = `TEAM-${randomStr}`;
-    const updatedUser: User = {
-      ...userData!,
-      teamCode: generatedCode
-    };
-
-    if (isLocalGuest) {
-      setUserData(updatedUser);
-      localStorage.setItem(`local_user_${authUser.uid}`, JSON.stringify(updatedUser));
-      const mockTeamTrips: Trip[] = [
-        {
-          id: 'trip_mock_osaka',
-          userId: 'user_lee_osaka',
-          userName: '이영희 과장',
-          userEmail: 'lee@company.com',
-          companyCode: userData?.companyCode || 'O1BO01',
-          teamCode: generatedCode,
-          title: '오사카 대리점 신제품 세미나 참석',
-          destination: 'Osaka, Japan',
-          startDate: '2026-08-26',
-          endDate: '2026-08-28',
-          purpose: '하반기 신제품 라인업 발표 및 대리점 계약 체결',
-          status: 'active',
-          isSharedWithTeam: true,
-          itinerary: [
-            {
-              id: 'item_osaka_1',
-              locationName: '신오사카역 신칸센 승강장',
-              address: '5 Chome-16 Nishinakajima, Yodogawa Ward, Osaka, 532-0011',
-              scheduledTime: '11:00',
-              coords: { latitude: 34.7334, longitude: 135.5001 },
-              date: '2026-08-26'
-            },
-            {
-              id: 'item_osaka_2',
-              locationName: '우메다 스카이 빌딩 컨벤션 홀',
-              address: '1-1-88 Oyodonaka, Kita Ward, Osaka, 531-6023',
-              scheduledTime: '14:00',
-              coords: { latitude: 34.7052, longitude: 135.4896 },
-              date: '2026-08-26'
-            }
-          ]
-        },
-        {
-          id: 'trip_mock_fukuoka',
-          userId: 'user_park_fukuoka',
-          userName: '박민수 팀장',
-          userEmail: 'park@company.com',
-          companyCode: userData?.companyCode || 'O1BO01',
-          teamCode: generatedCode,
-          title: '후쿠오카 거점 물류 창고 현장 점검',
-          destination: 'Fukuoka, Japan',
-          startDate: '2026-08-27',
-          purpose: '물류 센터 파트너십 협상 및 현장 재고 점검',
-          status: 'upcoming',
-          itinerary: []
-        }
-      ];
-      setTeamTrips(mockTeamTrips);
-      setNotification({ message: `팀 코드가 생성되었습니다: ${generatedCode}`, type: 'success' });
-    } else {
-      await upsertUser({ ...userData!, teamCode: generatedCode }).catch(() => {});
-      setUserData(updatedUser);
-      setNotification({ message: `팀 코드가 생성되었습니다: ${generatedCode}`, type: 'success' });
+    {
+      try {
+        const saved = await updateMembership('/teams');
+        setUserData(saved);
+        setNotification({ message: `팀 코드가 생성되었습니다: ${saved.teamCode}`, type: 'success' });
+      } catch (error) {
+        setNotification({ message: error instanceof Error ? error.message : '팀 생성 실패', type: 'error' });
+      }
     }
   };
 
   const handleManualCheckIn = async (itemId: string) => {
-    if(!authUser || !activeTrip) return;
-      const targetItem = activeTrip.itinerary.find(i => i.id === itemId);
-      if (!targetItem) return;
+    if (!authUser || !activeTrip) return;
+    const targetItem = activeTrip.itinerary.find(i => i.id === itemId);
+    if (!targetItem) return;
 
-      try {
-        const pos = await getCurrentPosition().catch(() => null);
-        const coords = pos ? { latitude: pos.coords.latitude, longitude: pos.coords.longitude } : targetItem.coords;
-        const dist = calculateDistance(coords.latitude, coords.longitude, targetItem.coords.latitude, targetItem.coords.longitude);
+    try {
+      const coords = await getCurrentPosition();
+      const dist = calculateDistance(coords, targetItem.coords);
 
-        // REST API call: POST /api/check-ins
-        const newRecord = await createCheckIn({
-          userId: authUser.uid,
-          tripId: activeTrip.id,
-          locationName: targetItem.locationName,
-          lat: coords.latitude,
-          lng: coords.longitude,
-          typeVal: 'check-in',
-          verified: dist <= 50,
-          itineraryItemId: itemId,
-          companyCode: userData?.companyCode || activeTrip.companyCode || 'COMP01',
-        }).catch(async () => {
-          // Fallback local record if offline
-          const fallback: CheckInRecord = {
-            id: `ci_${Date.now()}`,
-            userId: authUser.uid,
-            tripId: activeTrip.id,
-            locationName: targetItem.locationName,
-            timestamp: Date.now(),
-            coords,
-            type: 'check-in',
-            verified: dist <= 50,
-            itineraryItemId: itemId,
-            companyCode: userData?.companyCode || activeTrip.companyCode || 'COMP01'
-          return fallback;
-        });
+      // REST API call: POST /api/check-ins
+      const newRecord = await (createCheckIn({
+        userId: authUser.uid,
+        tripId: activeTrip.id,
+        locationName: targetItem.locationName,
+        lat: coords.latitude,
+        lng: coords.longitude,
+        typeVal: 'check-in',
+        verified: dist <= 50,
+        itineraryItemId: itemId,
+        companyCode: userData?.companyCode || activeTrip.companyCode || 'COMP01',
+      }));
 
-        const next = [newRecord, ...checkIns];
-        setCheckIns(next);
-        if (isLocalGuest) saveLocalCheckIns(next);
+      const next = [newRecord, ...checkIns];
+      setCheckIns(next);
 
-        setNotification({
-          message: dist <= 50 ? t.msg_checkin_ok.replace('{name}', targetItem.locationName) : t.msg_checkin_warn.replace('{name}', targetItem.locationName),
-          type: 'success'
-        });
-      } catch (err: any) {
-        setNotification({ message: err.message || '체크인 도중 오류가 발생했습니다.', type: 'error' });
-      }
-    };
 
-    const handleManualCheckOut = async (itemId: string) => {
-      if (!authUser || !activeTrip) return;
-      const targetItem = activeTrip.itinerary.find(i => i.id === itemId);
-      if (!targetItem) return;
-
-      try {
-        // REST API call: POST /api/check-ins
-        const newRecord = await createCheckIn({
-          userId: authUser.uid,
-          tripId: activeTrip.id,
-          locationName: targetItem.locationName,
-          lat: targetItem.coords.latitude,
-          lng: targetItem.coords.longitude,
-          typeVal: 'check-out',
-          verified: true,
-          itineraryItemId: itemId,
-          companyCode: userData?.companyCode || activeTrip.companyCode || 'COMP01',
-          nfcTagId: 'manual'
-        }).catch(async () => {
-          const fallback: CheckInRecord = {
-            id: `co_${Date.now()}`,
-            userId: authUser.uid,
-            tripId: activeTrip.id,
-            locationName: targetItem.locationName,
-            timestamp: Date.now(),
-            coords: targetItem.coords,
-            type: 'check-out',
-            verified: true,
-            itineraryItemId: itemId,
-            companyCode: userData?.companyCode || activeTrip.companyCode || 'COMP01',
-            nfcTagId: 'manual'
-          return fallback;
-        });
-
-        const next = [newRecord, ...checkIns];
-        setCheckIns(next);
-        if (isLocalGuest) saveLocalCheckIns(next);
-
-        setNotification({ message: t.msg_checkout_ok.replace('{name}', targetItem.locationName), type: 'success' });
-      } catch (err: any) {
-        setNotification({ message: err.message || '수동 체크아웃 중 오류가 발생했습니다.', type: 'error' });
-      }
-    };
-
-    const handleCheckOut = (itemId: string) => {
-      if (!activeTrip) return;
-      const item = activeTrip.itinerary.find(i => i.id === itemId);
-      if (!item) return;
-
-      setNfcModal({
-        show: true,
-        itemId,
-        item,
-        distance: 0,
-        isChecking: true,
-        status: 'idle'
+      setNotification({
+        message: dist <= 50 ? t.msg_checkin_ok.replace('{name}', targetItem.locationName) : t.msg_checkin_warn.replace('{name}', targetItem.locationName),
+        type: 'success'
       });
+    } catch (err: any) {
+      setNotification({ message: err.message || '체크인 도중 오류가 발생했습니다.', type: 'error' });
+    }
+  };
 
-      getCurrentPosition().then(pos => {
-        const dist = calculateDistance(pos.coords.latitude, pos.coords.longitude, item.coords.latitude, item.coords.longitude);
-        setNfcModal(prev => prev ? { ...prev, distance: Math.round(dist), isChecking: false } : null);
-      }).catch(() => {
-        setNfcModal(prev => prev ? { ...prev, distance: 0, isChecking: false } : null);
-      });
-    };
+  const handleManualCheckOut = async (itemId: string) => {
+    if (!authUser || !activeTrip) return;
+    const targetItem = activeTrip.itinerary.find(i => i.id === itemId);
+    if (!targetItem) return;
 
-    const startNfcScanning = async () => {
-      if (!nfcModal || !nfcModal.item) return;
+    try {
+      const coords = await getCurrentPosition();
+      const newRecord = await (createCheckIn({
+        userId: authUser.uid,
+        tripId: activeTrip.id,
+        locationName: targetItem.locationName,
+        lat: coords.latitude,
+        lng: coords.longitude,
+        typeVal: 'check-out',
+        verified: false,
+        itineraryItemId: itemId,
+        companyCode: userData?.companyCode || activeTrip.companyCode || 'COMP01',
+        nfcTagId: 'manual'
+      }));
 
-      if (!('NDEFReader' in window)) {
-        setNfcModal(prev => prev ? { ...prev, status: 'error', errorMsg: t.nfc_unsupported } : null);
-        return;
-      }
+      const next = [newRecord, ...checkIns];
+      setCheckIns(next);
 
-      try {
-        setNfcModal(prev => prev ? { ...prev, status: 'scanning' } : null);
-        const ndef = new (window as any).NDEFReader();
-        await ndef.scan();
 
-        ndef.onreading = async (event: any) => {
-          const serialNumber = event.serialNumber || 'NFC_VERIFIED_TAG';
-          await completeNfcCheckOut(serialNumber);
-        };
+      setNotification({ message: t.msg_checkout_ok.replace('{name}', targetItem.locationName), type: 'success' });
+    } catch (err: any) {
+      setNotification({ message: err.message || '수동 체크아웃 중 오류가 발생했습니다.', type: 'error' });
+    }
+  };
 
-        ndef.onreadingerror = () => {
-          setNfcModal(prev => prev ? { ...prev, status: 'error', errorMsg: t.nfc_error } : null);
-        };
-      } catch (err: any) {
-        setNfcModal(prev => prev ? { ...prev, status: 'error', errorMsg: err.message || t.nfc_error } : null);
-      }
-    };
+  const handleCheckOut = (itemId: string) => {
+    if (!activeTrip) return;
+    const item = activeTrip.itinerary.find(i => i.id === itemId);
+    if (!item) return;
 
-    const simulateNfcScan = async () => {
-      const mockSerialNumber = `MOCK_NFC_${Math.floor(1000 + Math.random() * 9000)}`;
-      await completeNfcCheckOut(mockSerialNumber);
-    };
+    setNfcModal({
+      show: true,
+      itemId,
+      item,
+      distance: 0,
+      isChecking: true,
+      status: 'idle'
+    });
 
-    const completeNfcCheckOut = async (serialNumber: string) => {
-      if (!nfcModal || !nfcModal.item || !authUser || !activeTrip) return;
+    getCurrentPosition().then(pos => {
+      const dist = calculateDistance(pos, item.coords);
+      setNfcModal(prev => prev ? { ...prev, distance: Math.round(dist), isChecking: false } : null);
+    }).catch(() => {
+      setNfcModal(prev => prev ? { ...prev, distance: Infinity, isChecking: false, status: 'error', errorMsg: '현재 위치를 확인하지 못했습니다. 위치 권한을 확인한 뒤 다시 시도해 주세요.' } : null);
+    });
+  };
 
-      try {
-        // REST API call: POST /api/check-ins
-        const newRecord = await createCheckIn({
-          userId: authUser.uid,
-          tripId: activeTrip.id,
-          locationName: nfcModal.item.locationName,
-          lat: nfcModal.item.coords.latitude,
-          lng: nfcModal.item.coords.longitude,
-          typeVal: 'check-out',
-          verified: true,
-          itineraryItemId: nfcModal.itemId,
-          companyCode: userData?.companyCode || activeTrip.companyCode || 'COMP01',
-          nfcTagId: serialNumber
-        }).catch(async () => {
-          const fallback: CheckInRecord = {
-            id: `co_nfc_${Date.now()}`,
-            userId: authUser.uid,
-            tripId: activeTrip.id,
-            locationName: nfcModal.item!.locationName,
-            timestamp: Date.now(),
-            coords: nfcModal.item!.coords,
-            type: 'check-out',
-            verified: true,
-            itineraryItemId: nfcModal.itemId,
-            companyCode: userData?.companyCode || activeTrip.companyCode || 'COMP01',
-            nfcTagId: serialNumber
-          return fallback;
-        });
+  const startNfcScanning = async () => {
+    if (!nfcModal || !nfcModal.item || nfcModal.isChecking || nfcModal.distance > 50) return;
 
-        const next = [newRecord, ...checkIns];
-        setCheckIns(next);
-        if (isLocalGuest) saveLocalCheckIns(next);
+    if (!('NDEFReader' in window)) {
+      setNfcModal(prev => prev ? { ...prev, status: 'error', errorMsg: t.nfc_unsupported } : null);
+      return;
+    }
 
-        setNfcModal(prev => prev ? { ...prev, status: 'success' } : null);
-        setNotification({ message: t.msg_checkout_ok.replace('{name}', nfcModal.item!.locationName), type: 'success' });
-        setTimeout(() => setNfcModal(null), 1500);
-      } catch (err: any) {
-        setNfcModal(prev => prev ? { ...prev, status: 'error', errorMsg: err.message } : null);
-      }
-    };
+    try {
+      setNfcModal(prev => prev ? { ...prev, status: 'scanning' } : null);
+      const ndef = new (window as any).NDEFReader();
+      nfcControllerRef.current?.abort();
+      const controller = new AbortController();
+      nfcControllerRef.current = controller;
+      await ndef.scan({ signal: controller.signal });
 
-    const handleFileUpload = async (file: File) => {
-      if (!authUser || !activeTrip) {
-        setNotification({ message: t.msg_no_trip_selected, type: 'error' });
-        return;
-      }
-
-      setLoading(true);
-      try {
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-          const base64Data = (e.target?.result as string).split(',')[1];
-          if (!base64Data) {
-            setNotification({ message: t.msg_img_fail, type: 'error' });
-            setLoading(false);
-            return;
-          }
-
-          const analysis = await analyzeReceiptImage(base64Data, language);
-          if (analysis) {
-            // REST API call: POST /api/expenses
-            const newExp = await createExpense({
-              userId: authUser.uid,
-              tripId: activeTrip.id,
-              expenseDate: analysis.date || new Date().toISOString().split('T')[0],
-              merchant: analysis.merchant,
-              amount: analysis.amount,
-              category: analysis.category,
-              companyCode: userData?.companyCode || activeTrip.companyCode || 'COMP01'
-            }).catch(async () => {
-              const fallback: Expense = {
-                id: `exp_${Date.now()}`,
-                userId: authUser.uid,
-                tripId: activeTrip.id,
-                date: analysis.date || new Date().toISOString().split('T')[0],
-                merchant: analysis.merchant,
-                amount: analysis.amount,
-                category: analysis.category,
-                companyCode: userData?.companyCode || activeTrip.companyCode || 'COMP01'
-              return fallback;
-            });
-
-            const next = [newExp, ...expenses];
-            setExpenses(next);
-            if (isLocalGuest) saveLocalExpenses(next);
-
-            setNotification({ message: `🧾 ${analysis.merchant} - ¥${analysis.amount.toLocaleString()} ${language === 'ja' ? '登録完了' : '등록 완료'}`, type: 'success' });
-          } else {
-            setNotification({ message: t.msg_receipt_fail, type: 'error' });
-          }
-          setLoading(false);
-        };
-        reader.readAsDataURL(file);
-      } catch (err: any) {
-        setNotification({ message: err.message || t.msg_receipt_fail, type: 'error' });
-        setLoading(false);
-      }
-    };
-
-    const handleGenerateReport = async (customPrompt?: string) => {
-      if (!activeTrip) return;
-      setLoading(true);
-      try {
-        const report = await generateTripReport(activeTrip, checkIns, expenses, language, customPrompt);
-        setGeneratedReport(report);
-        setView(ViewState.REPORT);
-      } catch (err: any) {
-        setNotification({ message: t.report_failed, type: 'error' });
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    const handleAiScheduleAction = async () => {
-      if (!activeTrip || !reportPrompt.trim()) return;
-      setLoading(true);
-      try {
-        const adjustedItinerary = await adjustTripItinerary(activeTrip, reportPrompt, language);
-        if (adjustedItinerary && adjustedItinerary.length > 0) {
-          const updatedTrip = { ...activeTrip, itinerary: adjustedItinerary };
-          if (isLocalGuest) {
-            const next = allTrips.map(t => t.id === activeTrip.id ? updatedTrip : t);
-            setAllTrips(next);
-            setActiveTrip(updatedTrip);
-            saveLocalTrips(next);
-          } else {
-            await createTrip({ ...activeTrip, itineraryJson: adjustedItinerary }).catch(() => {});
-            setActiveTrip(updatedTrip);
-          }
-          setNotification({ message: '🗓️ AI 일정이 새로 조정되어 반영되었습니다.', type: 'success' });
-          setReportPrompt('');
-        } else {
-          setNotification({ message: '일정 조정을 완료하지 못했습니다.', type: 'error' });
-        }
-      } catch (err: any) {
-        setNotification({ message: err.message || '일정 조정 실패', type: 'error' });
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    const handleShareTrip = (trip: Trip) => {
-      const text = formatTripForSharing(trip, language);
-      const windowRef = window as any;
-
-      if (windowRef.Kakao && windowRef.Kakao.isInitialized() && windowRef.Kakao.Share) {
-        try {
-          windowRef.Kakao.Share.sendDefault({
-            objectType: 'text',
-            text: text,
-            link: {
-              mobileWebUrl: window.location.href,
-              webUrl: window.location.href,
-            },
-            buttonTitle: language === 'ko' ? 'O1BO 앱에서 보기' : 'O1BOアプリで見る'
-          });
-          setNotification({ message: language === 'ko' ? '카카오톡으로 일정을 공유합니다.' : 'KakaoTalkで日程を共有します。', type: 'success' });
+      ndef.onreading = async (event: any) => {
+        const serialNumber = event.serialNumber;
+        if (!serialNumber) {
+          setNfcModal(previous => previous ? { ...previous, status: 'error', errorMsg: 'NFC 태그 식별자를 읽지 못했습니다.' } : null);
           return;
-        } catch (_) { }
-      }
+        }
+        controller.abort();
+        await completeNfcCheckOut(serialNumber);
+      };
 
-      navigator.clipboard.writeText(text).then(() => {
-        setNotification({ message: language === 'ko' ? '출장 일정이 클립보드에 복사되었습니다.' : '出張日程がクリップボードにコピーされました。', type: 'success' });
-      }).catch(() => {
-        alert(text);
+      ndef.onreadingerror = () => {
+        setNfcModal(prev => prev ? { ...prev, status: 'error', errorMsg: t.nfc_error } : null);
+      };
+    } catch (err: any) {
+      setNfcModal(prev => prev ? { ...prev, status: 'error', errorMsg: err.message || t.nfc_error } : null);
+    }
+  };
+
+  const completeNfcCheckOut = async (serialNumber: string) => {
+    if (!nfcModal || !nfcModal.item || !authUser || !activeTrip) return;
+
+    try {
+      const coords = await getCurrentPosition();
+      if (calculateDistance(coords, nfcModal.item.coords) > 50) throw new Error('현장에서 50m 이내일 때 체크아웃할 수 있습니다.');
+      // Server must verify registered tags and recompute the distance.
+      const newRecord = await (createCheckIn({
+        userId: authUser.uid,
+        tripId: activeTrip.id,
+        locationName: nfcModal.item.locationName,
+        lat: coords.latitude,
+        lng: coords.longitude,
+        typeVal: 'check-out',
+        verified: false,
+        itineraryItemId: nfcModal.itemId,
+        companyCode: userData?.companyCode || activeTrip.companyCode || 'COMP01',
+        nfcTagId: serialNumber
+      }));
+
+      const next = [newRecord, ...checkIns];
+      setCheckIns(next);
+
+
+      setNfcModal(prev => prev ? { ...prev, status: 'success' } : null);
+      setNotification({ message: t.msg_checkout_ok.replace('{name}', nfcModal.item!.locationName), type: 'success' });
+      setTimeout(() => setNfcModal(null), 1500);
+    } catch (err: any) {
+      setNfcModal(prev => prev ? { ...prev, status: 'error', errorMsg: err.message } : null);
+    }
+  };
+
+  const handleFileUpload = async (file: File) => {
+    if (!authUser || !activeTrip) {
+      setNotification({ message: t.msg_no_trip_selected, type: 'error' });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      if (file.size > 10 * 1024 * 1024) throw new Error('10MB 이하 이미지를 선택해 주세요.');
+      if (!['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(file.type)) {
+        throw new Error('지원되는 영수증 이미지 파일을 선택해 주세요.');
+      }
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error(t.msg_img_fail));
+        reader.onabort = () => reject(new Error(t.msg_img_fail));
+        reader.readAsDataURL(file);
       });
-    };
+      const base64Data = dataUrl.split(',')[1];
+      if (!base64Data) throw new Error(t.msg_img_fail);
 
-    const navigateToCreateTrip = (sourceView: ViewState) => {
-      setTripCreationSource(sourceView);
-      setView(ViewState.CREATE_TRIP);
-    };
-
-    const handleSaveTrip = async () => {
-      if (!newTripData.title || !newTripData.destination || !newTripData.startDate || !newTripData.endDate) {
-        setNotification({ message: t.msg_fill_all, type: 'error' });
-        return;
+      const analysis = await analyzeReceiptImage(base64Data, file.type);
+      if (!analysis || !analysis.merchant || !Number.isFinite(analysis.amount) || analysis.amount < 0) {
+        throw new Error(t.msg_receipt_fail);
       }
+      if (analysis.currency !== 'JPY') throw new Error('현재 JPY 영수증만 지원합니다. 다른 통화를 엔화로 저장할 수 없습니다.');
+      setExpenseDraft({ tripId: activeTrip.id, merchant: analysis.merchant, amount: String(analysis.amount), date: analysis.date || '', category: ['Meals', 'Transport', 'Hotel', 'Other'].includes(analysis.category) ? analysis.category : 'Other', currency: 'JPY', preview: dataUrl });
+      setLoading(false);
+    } catch (err: any) {
+      setNotification({ message: err.message || t.msg_receipt_fail, type: 'error' });
+      setLoading(false);
+    }
+  };
 
-      if (!authUser) return;
+  const handleSaveExpense = async () => {
+    if (!expenseDraft || !authUser || loading) return;
+    setLoading(true);
+    try {
+      const trip = allTrips.find(item => item.id === expenseDraft.tripId);
+      if (!trip) throw new Error('경비를 등록할 출장을 찾을 수 없습니다.');
+      assertDate(expenseDraft.date);
+      const amount = Number(expenseDraft.amount);
+      if (!expenseDraft.merchant.trim() || !expenseDraft.amount.trim() || !Number.isSafeInteger(amount) || amount < 0) throw new Error('가맹점과 엔화 금액을 확인해 주세요.');
+      const expense: Expense = { id: crypto.randomUUID(), userId: authUser.uid, tripId: trip.id, date: expenseDraft.date, merchant: expenseDraft.merchant.trim(), amount, category: expenseDraft.category, companyCode: trip.companyCode };
+      const saved = await createExpense({ ...expense, expenseDate: expense.date });
+      const next = [saved, ...expenses];
 
+      setExpenses(next);
+      setExpenseDraft(null);
+      setNotification({ message: language === 'ja' ? '経費を保存しました。' : '경비를 저장했습니다.', type: 'success' });
+    } catch (error) {
+      setNotification({ message: error instanceof Error ? error.message : '경비 저장 실패', type: 'error' });
+    } finally { setLoading(false); }
+  };
+
+  const handleDeleteExpense = async (id: string) => {
+    if (loading || !window.confirm(language === 'ja' ? 'この経費を削除しますか？' : '이 경비를 삭제할까요?')) return;
+    setLoading(true);
+    try {
+      if (!await deleteExpense(id)) throw new Error('경비 삭제 결과를 확인하지 못했습니다.');
+      const next = expenses.filter(expense => expense.id !== id);
+
+      setExpenses(next);
+      setNotification({ message: language === 'ja' ? '経費を削除しました。' : '경비를 삭제했습니다.', type: 'success' });
+    } catch (error) {
+      setNotification({ message: error instanceof Error ? error.message : '경비 삭제 실패', type: 'error' });
+    } finally { setLoading(false); }
+  };
+
+  const handleManualExpense = () => {
+    if (!activeTrip) return;
+    setExpenseDraft({ tripId: activeTrip.id, merchant: '', amount: '', date: new Date().toISOString().slice(0, 10), category: 'Other', currency: 'JPY' });
+  };
+
+  const handleGenerateReport = async (customPrompt?: string) => {
+    if (!activeTrip) return;
+    setLoading(true);
+    try {
+      const report = await generateTripReport(checkIns.filter(record => record.tripId === activeTrip.id), expenses.filter(expense => expense.tripId === activeTrip.id), language, activeTrip.itinerary, customPrompt);
+      setGeneratedReport(report);
+      setView(ViewState.REPORT);
+    } catch (err: any) {
+      setNotification({ message: t.report_failed, type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAiScheduleAction = async () => {
+    if (!activeTrip || !reportPrompt.trim()) return;
+    setLoading(true);
+    try {
+      const adjusted = await adjustTripItinerary(activeTrip.itinerary, reportPrompt, activeTrip.startDate, activeTrip.endDate, language);
+      const adjustedItinerary = await normalizeItinerary(adjusted, activeTrip.startDate, activeTrip.endDate, geocodeAddress);
+      if (adjustedItinerary && adjustedItinerary.length > 0) {
+        const updatedTrip = { ...activeTrip, itinerary: adjustedItinerary };
+        {
+          const savedTrip = await updateTrip(updatedTrip);
+          setAllTrips(previous => previous.map(trip => trip.id === savedTrip.id ? savedTrip : trip));
+          setActiveTrip(savedTrip);
+        }
+        setNotification({ message: '🗓️ AI 일정이 새로 조정되어 반영되었습니다.', type: 'success' });
+        setReportPrompt('');
+      } else {
+        setNotification({ message: '일정 조정을 완료하지 못했습니다.', type: 'error' });
+      }
+    } catch (err: any) {
+      setNotification({ message: err.message || '일정 조정 실패', type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleShareTrip = (trip: Trip) => {
+    const text = formatTripForSharing(trip, language);
+    const windowRef = window as any;
+
+    if (windowRef.Kakao && windowRef.Kakao.isInitialized() && windowRef.Kakao.Share) {
       try {
-        const coords = await geocodeAddress(newTripData.destination);
-        const itineraryItems: ItineraryItem[] = [
-          {
-            id: `item_${Date.now()}_1`,
-            locationName: `${newTripData.destination} 도착 및 수속`,
-            address: newTripData.destination,
-            scheduledTime: '10:00',
-            coords: coords,
-            date: newTripData.startDate
-          }
-        ];
-
-        const tripObj: Omit<Trip, 'id'> = {
-          userId: authUser.uid,
-          userName: userData?.name || authUser.displayName || '사용자',
-          userEmail: authUser.email || '',
-          companyCode: userData?.companyCode || 'DEFAULT',
-          teamCode: userData?.teamCode || '',
-          isSharedWithTeam: newTripData.isSharedWithTeam ?? true,
-          title: newTripData.title,
-          destination: newTripData.destination,
-          startDate: newTripData.startDate,
-          endDate: newTripData.endDate,
-          purpose: newTripData.purpose,
-          status: 'active',
-          itinerary: itineraryItems
-        };
-
-        // REST API call: POST /api/trips
-        const createdTrip = await createTrip({
-          userId: authUser.uid,
-          title: newTripData.title,
-          startDate: newTripData.startDate,
-          endDate: newTripData.endDate,
-          destination: newTripData.destination,
-          purpose: newTripData.purpose,
-          itineraryJson: itineraryItems,
-          companyCode: userData?.companyCode || 'COMP01',
-          teamCode: userData?.teamCode || 'TEAM01',
-          isSharedWithTeam: newTripData.isSharedWithTeam,
-          status: 'upcoming'
-        }).catch(async () => {
-          const fallback: Trip = {
-            id: `trip_${Date.now()}`,
-            userId: authUser.uid,
-            userName: userData?.name || authUser.displayName || '사용자',
-            userEmail: authUser.email || '',
-            companyCode: userData?.companyCode || 'COMP01',
-            teamCode: userData?.teamCode || 'TEAM01',
-            isSharedWithTeam: newTripData.isSharedWithTeam ?? true,
-            title: newTripData.title,
-            destination: newTripData.destination,
-            startDate: newTripData.startDate,
-            endDate: newTripData.endDate,
-            purpose: newTripData.purpose,
-            status: 'upcoming',
-            itinerary: itineraryItems
-          return fallback;
+        windowRef.Kakao.Share.sendDefault({
+          objectType: 'text',
+          text: text,
+          link: {
+            mobileWebUrl: window.location.href,
+            webUrl: window.location.href,
+          },
+          buttonTitle: language === 'ko' ? 'O1BO 앱에서 보기' : 'O1BOアプリで見る'
         });
+        setNotification({ message: language === 'ko' ? '카카오톡으로 일정을 공유합니다.' : 'KakaoTalkで日程を共有します。', type: 'success' });
+        return;
+      } catch (_) { }
+    }
 
-        const next = [createdTrip, ...allTrips];
-        setAllTrips(next);
-        setActiveTrip(createdTrip);
-        if (isLocalGuest) saveLocalTrips(next);
+    navigator.clipboard.writeText(text).then(() => {
+      setNotification({ message: language === 'ko' ? '출장 일정이 클립보드에 복사되었습니다.' : '出張日程がクリップボードにコピーされました。', type: 'success' });
+    }).catch(() => {
+      alert(text);
+    });
+  };
 
-        if (createdTrip.isSharedWithTeam && createdTrip.teamCode) {
-          setTeamTrips(prev => [createdTrip, ...prev]);
+  const navigateToCreateTrip = (sourceView: ViewState) => {
+    setTripCreationSource(sourceView);
+    setView(ViewState.CREATE_TRIP);
+  };
+
+  const handleSaveTrip = async () => {
+    if (!newTripData.title || !newTripData.destination || !newTripData.startDate || !newTripData.endDate) {
+      setNotification({ message: t.msg_fill_all, type: 'error' });
+      return;
+    }
+
+    if (!authUser || loading) return;
+    setLoading(true);
+
+    try {
+      assertTripDates(newTripData.startDate, newTripData.endDate);
+      const coords = await geocodeAddress(newTripData.destination);
+      const itineraryItems: ItineraryItem[] = [
+        {
+          id: `item_${Date.now()}_1`,
+          title: `${newTripData.destination} 도착 및 수속`,
+          locationName: `${newTripData.destination} 도착 및 수속`,
+          address: newTripData.destination,
+          scheduledTime: '10:00',
+          coords: coords,
+          date: newTripData.startDate
         }
+      ];
 
-        setNotification({ message: t.msg_trip_created, type: 'success' });
-        setNewTripData({
-          title: '',
-          destination: '',
-          startDate: new Date().toISOString().split('T')[0],
-          endDate: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
-          purpose: '',
-          isSharedWithTeam: true
-        });
+      const tripObj: Omit<Trip, 'id'> = {
+        userId: authUser.uid,
+        userName: userData?.name || authUser.displayName || '사용자',
+        userEmail: authUser.email || '',
+        companyCode: userData?.companyCode || 'DEFAULT',
+        teamCode: userData?.teamCode || '',
+        isSharedWithTeam: newTripData.isSharedWithTeam ?? true,
+        title: newTripData.title,
+        destination: newTripData.destination,
+        startDate: newTripData.startDate,
+        endDate: newTripData.endDate,
+        purpose: newTripData.purpose,
+        status: 'ongoing',
+        itinerary: itineraryItems
+      };
 
-        setView(tripCreationSource || ViewState.HOME);
-      } catch (err: any) {
-        setNotification({ message: err.message || '출장 생성 도중 오류가 발생했습니다.', type: 'error' });
+      // REST API call: POST /api/trips
+      const createdTrip = await (createTrip({
+        userId: authUser.uid,
+        title: newTripData.title,
+        startDate: newTripData.startDate,
+        endDate: newTripData.endDate,
+        destination: newTripData.destination,
+        purpose: newTripData.purpose,
+        itineraryJson: itineraryItems,
+        companyCode: userData?.companyCode || 'COMP01',
+        teamCode: userData?.teamCode || 'TEAM01',
+        isSharedWithTeam: newTripData.isSharedWithTeam,
+        status: 'upcoming'
+      }));
+
+      const next = [createdTrip, ...allTrips];
+      setAllTrips(next);
+      setActiveTrip(createdTrip);
+
+
+      if (userData?.role === 'admin' && createdTrip.userId !== authUser.uid) {
+        setTeamTrips(prev => [createdTrip, ...prev]);
       }
+
+      setNotification({ message: t.msg_trip_created, type: 'success' });
+      setNewTripData({
+        title: '',
+        destination: '',
+        startDate: new Date().toISOString().split('T')[0],
+        endDate: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
+        purpose: '',
+        isSharedWithTeam: true
+      });
+
+      setView(tripCreationSource || ViewState.HOME);
+    } catch (err: any) {
+      setNotification({ message: err.message || '출장 생성 도중 오류가 발생했습니다.', type: 'error' });
+    } finally { setLoading(false); }
+  };
+
+  const handleDeleteTrip = async (e: React.MouseEvent, tripId: string) => {
+    e.stopPropagation();
+    if (!window.confirm(t.confirm_delete_trip)) return;
+
+    try {
+      {
+        await deleteTrip(tripId);
+        const remaining = allTrips.filter(t => t.id !== tripId);
+        setAllTrips(remaining);
+        if (activeTrip?.id === tripId) {
+          setActiveTrip(remaining.length > 0 ? remaining[0] : null);
+        }
+      }
+      const nextRecords = checkIns.filter(record => record.tripId !== tripId);
+      const nextExpenses = expenses.filter(expense => expense.tripId !== tripId);
+
+      setCheckIns(nextRecords); setExpenses(nextExpenses);
+      setTeamTrips(previous => previous.filter(trip => trip.id !== tripId));
+      setNotification({ message: t.msg_trip_deleted, type: 'success' });
+    } catch (err: any) {
+      setNotification({ message: err.message || '출장 삭제 오류가 발생했습니다.', type: 'error' });
+    }
+  };
+
+  const handleDeleteItineraryItem = async (itemId: string) => {
+    if (!activeTrip) return;
+    if (!window.confirm(t.confirm_delete_itinerary)) return;
+
+    try {
+      const updatedItinerary = activeTrip.itinerary.filter(item => item.id !== itemId);
+      const updatedTrip = { ...activeTrip, itinerary: updatedItinerary };
+
+      {
+        const savedTrip = await updateTrip(updatedTrip);
+        setAllTrips(previous => previous.map(trip => trip.id === savedTrip.id ? savedTrip : trip));
+        setActiveTrip(savedTrip);
+      }
+      setNotification({ message: t.msg_itinerary_deleted, type: 'success' });
+    } catch (err: any) {
+      setNotification({ message: err.message || '일정 삭제 실패', type: 'error' });
+    }
+  };
+
+  const handleEditClick = (item: ItineraryItem) => {
+    setEditingItemId(item.id);
+    setEditItemData({
+      locationName: item.locationName,
+      address: item.address,
+      scheduledTime: item.scheduledTime,
+      date: item.date || activeTrip?.startDate || ''
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!activeTrip || !editingItemId) return;
+
+    try {
+      const updatedItinerary = await Promise.all(activeTrip.itinerary.map(async (item) => {
+        if (item.id === editingItemId) {
+          let coords = item.coords;
+          if (editItemData.address && editItemData.address !== item.address) {
+            coords = await geocodeAddress(editItemData.address);
+          }
+          return {
+            ...item,
+            locationName: editItemData.locationName || item.locationName,
+            address: editItemData.address || item.address,
+            scheduledTime: editItemData.scheduledTime || item.scheduledTime,
+            date: editItemData.date || item.date,
+            coords
+          };
+        }
+        return item;
+      }));
+
+      const validated = await normalizeItinerary(updatedItinerary, activeTrip.startDate, activeTrip.endDate, geocodeAddress);
+      const updatedTrip = { ...activeTrip, itinerary: validated };
+
+      {
+        const savedTrip = await updateTrip(updatedTrip);
+        setAllTrips(previous => previous.map(trip => trip.id === savedTrip.id ? savedTrip : trip));
+        setActiveTrip(savedTrip);
+      }
+
+      setEditingItemId(null);
+      setEditItemData({});
+      setNotification({ message: language === 'ja' ? '日程を更新しました' : '일정을 수정했습니다', type: 'success' });
+    } catch (err: any) {
+      setNotification({ message: err.message || '일정 수정 실패', type: 'error' });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingItemId(null);
+    setEditItemData({});
+  };
+
+  const handleJoinTeam = async () => {
+    if (!userData || !teamCodeInput.trim()) return;
+    {
+      try {
+        const saved = await updateMembership('/teams/join', teamCodeInput.trim().toUpperCase());
+        setUserData(saved); setTeamCodeInput('');
+        setNotification({ message: '팀에 참여했습니다.', type: 'success' });
+      } catch (error) {
+        setNotification({ message: error instanceof Error ? error.message : '팀 참여 실패', type: 'error' });
+      }
+      return;
+    }
+  };
+
+  const handleCopyTeamCode = async () => {
+    if (!userData?.teamCode) return;
+    try {
+      await navigator.clipboard.writeText(userData.teamCode);
+      setNotification({ message: '팀 코드를 복사했습니다.', type: 'success' });
+    } catch {
+      setNotification({ message: '팀 코드를 복사하지 못했습니다.', type: 'error' });
+    }
+  };
+
+  const handleShareTeamCodeKakao = async () => {
+    if (!userData?.teamCode) return;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'O1BO 팀 코드', text: userData.teamCode });
+      } else {
+        await handleCopyTeamCode();
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return;
+      setNotification({ message: '팀 코드를 공유하지 못했습니다.', type: 'error' });
+    }
+  };
+
+  const handleExportToWord = () => {
+    if (!generatedReport) return;
+    const blob = new Blob([createReportDocx(generatedReport)], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeTrip?.title || 'Trip'}_Report_${new Date().toISOString().split('T')[0]}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setNotification({ message: language === 'ja' ? 'Word文書をダウンロードしました。' : 'Word 문서로 내보내기 완료되었습니다.', type: 'success' });
+  };
+
+  const handleShareReport = () => {
+    if (!generatedReport || !activeTrip) return;
+    const text = `[O1BO AI 출장일보]\n\n📌 출장명: ${activeTrip.title}\n📅 기간: ${activeTrip.startDate} ~ ${activeTrip.endDate}\n\n${generatedReport.slice(0, 300)}...`;
+    handleShareTrip({ ...activeTrip, purpose: text });
+  };
+
+  const handleSendReport = async () => {
+    if (!recipientEmail.trim()) {
+      setNotification({ message: t.error_email_required, type: 'error' });
+      return;
+    }
+    if (!activeTrip || !generatedReport || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail.trim())) {
+      setNotification({ message: '보고서와 올바른 이메일 주소를 확인해 주세요.', type: 'error' });
+      return;
+    }
+
+    setIsSending(true);
+    try {
+      await sendReportEmail(activeTrip.id, recipientEmail.trim(), generatedReport);
+      setNotification({ message: t.msg_email_sent.replace('{email}', recipientEmail), type: 'success' });
+    } catch (error) {
+      setNotification({ message: error instanceof Error ? error.message : '이메일 발송 실패', type: 'error' });
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleSaveAndBack = async () => {
+    if (!activeTrip) return;
+    setLoading(true);
+    try {
+      const updated = { ...activeTrip, report: generatedReport };
+      const saved = await updateTrip(updated);
+      const next = allTrips.map(trip => trip.id === saved.id ? saved : trip);
+
+      setAllTrips(next);
+      setActiveTrip(saved);
+      setView(ViewState.HOME);
+    } catch (error) {
+      setNotification({ message: error instanceof Error ? error.message : '보고서 저장 실패', type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderMarkdown = (text: string): string => {
+    if (!text) return '';
+    let html = sanitizeString(text)
+      .replace(/^### (.*$)/gim, '<h3 class="text-base font-bold text-slate-800 dark:text-white mt-4 mb-2">$1</h3>')
+      .replace(/^## (.*$)/gim, '<h3 class="text-lg font-bold text-brand-orange mt-6 mb-3 border-b border-orange-100 pb-2">$1</h3>')
+      .replace(/^# (.*$)/gim, '<h2 class="text-xl font-extrabold text-slate-900 dark:text-white mb-4">$1</h2>')
+      .replace(/\*\*(.*)\*\*/gim, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>')
+      .replace(/\*(.*)\*/gim, '<em class="italic">$1</em>')
+      .replace(/\n$/gim, '<br />');
+    return html;
+  };
+
+  const renderExpenseChart = () => {
+    if (expenses.length === 0) return null;
+    const total = expenses.reduce((sum, e) => sum + e.amount, 0);
+
+    return (
+      <div className="bg-white dark:bg-gray-800 p-5 rounded-3xl border border-gray-150 dark:border-gray-700 shadow-card-soft space-y-4">
+        <div className="flex justify-between items-center border-b border-gray-100 dark:border-gray-700 pb-3">
+          <h3 className="font-extrabold text-gray-900 dark:text-white text-sm">{t.chart_title}</h3>
+          <span className="text-xs font-bold text-brand-orange">
+            {t.chart_total}: ¥{total.toLocaleString()}
+          </span>
+        </div>
+        <div className="space-y-2">
+          {expenses.map((ex) => {
+            const percent = total > 0 ? Math.round((ex.amount / total) * 100) : 0;
+            return (
+              <div key={ex.id} className="space-y-1">
+                <div className="flex justify-between text-xs font-medium text-gray-700 dark:text-gray-300">
+                  <span>{ex.merchant} ({ex.category})</span>
+                  <span>¥{ex.amount.toLocaleString()} ({percent}%)</span>
+                </div>
+                <div className="w-full bg-gray-100 dark:bg-gray-700 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-brand-orange h-full rounded-full transition-all duration-500"
+                    style={{ width: `${percent}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // Voice AI assistant & wake word handler
+  const startListening = () => {
+    const windowRef = window as any;
+    const SpeechRecognition = windowRef.SpeechRecognition || windowRef.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Speech Recognition is not supported in this browser.');
+      return;
+    }
+
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (_) { }
+    }
+
+    const rec = new SpeechRecognition();
+    recognitionRef.current = rec;
+    rec.lang = language === 'ja' ? 'ja-JP' : 'ko-KR';
+    rec.continuous = false;
+    rec.interimResults = false;
+
+    rec.onstart = () => setIsListening(true);
+    rec.onend = () => setIsListening(false);
+    rec.onerror = () => setIsListening(false);
+
+    rec.onresult = (e: any) => {
+      const transcript = e.results[0][0].transcript;
+      setAiChatInput(transcript);
     };
 
-        const handleDeleteTrip = async (e: React.MouseEvent, tripId: string) => {
-          e.stopPropagation();
-          if (!window.confirm(t.confirm_delete_trip)) return;
+    rec.start();
+  };
 
-          try {
-            if (isLocalGuest) {
-              const next = allTrips.filter(t => t.id !== tripId);
-              setAllTrips(next);
-              setTeamTrips(prev => prev.filter(t => t.id !== tripId));
-              if (activeTrip?.id === tripId) {
-                setActiveTrip(next.length > 0 ? next[0] : null);
-              }
-              saveLocalTrips(next);
-            } else {
-              const remaining = allTrips.filter(t => t.id !== tripId);
-              setAllTrips(remaining);
-              if (activeTrip?.id === tripId) {
-                setActiveTrip(remaining.length > 0 ? remaining[0] : null);
-              }
-            }
-            setNotification({ message: t.msg_trip_deleted, type: 'success' });
-          } catch (err: any) {
-            setNotification({ message: err.message || '출장 삭제 오류가 발생했습니다.', type: 'error' });
-          }
-        };
+  const refreshAgentTrip = async (tripId?: string) => {
+    const visible = await fetchTrips();
+    setAllTrips(visible.filter(trip => trip.userId === authUser?.uid));
+    if (userData?.role === 'admin') setAdminTrips(visible);
+    if (tripId) {
+      const selected = visible.find(trip => trip.id === tripId && trip.userId === authUser?.uid);
+      if (selected) setActiveTrip(selected);
+    }
+  };
 
-        const handleDeleteItineraryItem = async (itemId: string) => {
-          if (!activeTrip) return;
-          if (!window.confirm(t.confirm_delete_itinerary)) return;
+  if (!isAuthReady) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center transition-colors duration-200 ${theme === 'dark' ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-orange dark:border-brand-orange"></div>
+      </div>
+    );
+  }
 
-          try {
-            const updatedItinerary = activeTrip.itinerary.filter(item => item.id !== itemId);
-            const updatedTrip = { ...activeTrip, itinerary: updatedItinerary };
-
-            if (isLocalGuest) {
-              const nextTrips = allTrips.map(t => t.id === activeTrip.id ? updatedTrip : t);
-              setAllTrips(nextTrips);
-              setActiveTrip(updatedTrip);
-              saveLocalTrips(nextTrips);
-            } else {
-              await createTrip({ ...activeTrip, itineraryJson: updatedItinerary }).catch(() => {});
-              setActiveTrip(updatedTrip);
-            }
-            setNotification({ message: t.msg_itinerary_deleted, type: 'success' });
-          } catch (err: any) {
-            setNotification({ message: err.message || '일정 삭제 실패', type: 'error' });
-          }
-        };
-
-        const handleEditClick = (item: ItineraryItem) => {
-          setEditingItemId(item.id);
-          setEditItemData({
-            locationName: item.locationName,
-            address: item.address,
-            scheduledTime: item.scheduledTime,
-            date: item.date || activeTrip?.startDate || ''
-          });
-        };
-
-        const handleSaveEdit = async () => {
-          if (!activeTrip || !editingItemId) return;
-
-          try {
-            const updatedItinerary = await Promise.all(activeTrip.itinerary.map(async (item) => {
-              if (item.id === editingItemId) {
-                let coords = item.coords;
-                if (editItemData.address && editItemData.address !== item.address) {
-                  coords = await geocodeAddress(editItemData.address);
-                }
-                return {
-                  ...item,
-                  locationName: editItemData.locationName || item.locationName,
-                  address: editItemData.address || item.address,
-                  scheduledTime: editItemData.scheduledTime || item.scheduledTime,
-                  date: editItemData.date || item.date,
-                  coords
-                };
-              }
-              return item;
-            }));
-
-            const updatedTrip = { ...activeTrip, itinerary: updatedItinerary };
-
-            if (isLocalGuest) {
-              const nextTrips = allTrips.map(t => t.id === activeTrip.id ? updatedTrip : t);
-              setAllTrips(nextTrips);
-              setActiveTrip(updatedTrip);
-              saveLocalTrips(nextTrips);
-            } else {
-              await createTrip({ ...activeTrip, itineraryJson: updatedItinerary }).catch(() => {});
-              setActiveTrip(updatedTrip);
-            }
-
-            setEditingItemId(null);
-            setEditItemData({});
-            setNotification({ message: language === 'ja' ? '日程を更新しました' : '일정을 수정했습니다', type: 'success' });
-          } catch (err: any) {
-            setNotification({ message: err.message || '일정 수정 실패', type: 'error' });
-          }
-        };
-
-        const handleCancelEdit = () => {
-          setEditingItemId(null);
-          setEditItemData({});
-        };
-
-        const handleJoinCompany = async () => {
-          if (!authUser || !companyCodeInput.trim()) return;
-          setLoading(true);
-          try {
-            const updatedUser: User = {
-              ...userData!,
-              companyCode: companyCodeInput.trim().toUpperCase()
-            };
-            if (!isLocalGuest) {
-              await upsertUser({ ...userData!, companyCode: companyCodeInput.trim().toUpperCase() }).catch(() => {});
-            }
-            setUserData(updatedUser);
-            setNotification({ message: t.msg_company_joined, type: 'success' });
-            setCompanyCodeInput('');
-          } catch (err: any) {
-            setNotification({ message: err.message || '회사 참여 실패', type: 'error' });
-          } finally {
-            setLoading(false);
-          }
-        };
-
-        const cleanDecemberRecords = async (confirmClean: boolean) => {
-          if (!confirmClean) return;
-          setLoading(true);
-          try {
-            if (isLocalGuest) {
-              setAllTrips([]);
-              setActiveTrip(null);
-              setCheckIns([]);
-              setExpenses([]);
-              setTeamTrips([]);
-              localStorage.removeItem(`local_trips_${authUser?.uid}`);
-              localStorage.removeItem(`local_checkins_${authUser?.uid}`);
-              localStorage.removeItem(`local_expenses_${authUser?.uid}`);
-            } else {
-              setAdminTrips([]);
-              setAdminCheckIns([]);
-              setAdminExpenses([]);
-            }
-            setNotification({ message: '데이터가 강제 정리되었습니다.', type: 'success' });
-          } catch (err: any) {
-            setNotification({ message: err.message || '데이터 정리 실패', type: 'error' });
-          } finally {
-            setLoading(false);
-          }
-        };
-
-        const handleExportToWord = () => {
-          if (!generatedReport) return;
-          const blob = new Blob(['\ufeff' + generatedReport], { type: 'application/msword' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${activeTrip?.title || 'Trip'}_Report_${new Date().toISOString().split('T')[0]}.doc`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-          setNotification({ message: language === 'ja' ? 'Word文書をダウンロードしました。' : 'Word 문서로 내보내기 완료되었습니다.', type: 'success' });
-        };
-
-        const handleShareReport = () => {
-          if (!generatedReport || !activeTrip) return;
-          const text = `[O1BO AI 출장일보]\n\n📌 출장명: ${activeTrip.title}\n📅 기간: ${activeTrip.startDate} ~ ${activeTrip.endDate}\n\n${generatedReport.slice(0, 300)}...`;
-          handleShareTrip({ ...activeTrip, purpose: text });
-        };
-
-        const handleSendReport = async () => {
-          if (!recipientEmail.trim()) {
-            setNotification({ message: t.error_email_required, type: 'error' });
-            return;
-          }
-          setIsSending(true);
-          setTimeout(() => {
-            setIsSending(false);
-            setNotification({ message: t.msg_email_sent.replace('{email}', recipientEmail), type: 'success' });
-          }, 1200);
-        };
-
-        const handleSaveAndBack = () => {
-          setView(ViewState.HOME);
-        };
-
-        const renderMarkdown = (text: string): string => {
-          if (!text) return '';
-          let html = text
-            .replace(/^### (.*$)/gim, '<h3 class="text-base font-bold text-slate-800 dark:text-white mt-4 mb-2">$1</h3>')
-            .replace(/^## (.*$)/gim, '<h3 class="text-lg font-bold text-brand-orange mt-6 mb-3 border-b border-orange-100 pb-2">$1</h3>')
-            .replace(/^# (.*$)/gim, '<h2 class="text-xl font-extrabold text-slate-900 dark:text-white mb-4">$1</h2>')
-            .replace(/\*\*(.*)\*\*/gim, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>')
-            .replace(/\*(.*)\*/gim, '<em class="italic">$1</em>')
-            .replace(/\n$/gim, '<br />');
-          return html;
-        };
-
-        const renderExpenseChart = () => {
-          if (expenses.length === 0) return null;
-          const total = expenses.reduce((sum, e) => sum + e.amount, 0);
-
-          return (
-            <div className="bg-white dark:bg-gray-800 p-5 rounded-3xl border border-gray-150 dark:border-gray-700 shadow-card-soft space-y-4">
-              <div className="flex justify-between items-center border-b border-gray-100 dark:border-gray-700 pb-3">
-                <h3 className="font-extrabold text-gray-900 dark:text-white text-sm">{t.chart_title}</h3>
-                <span className="text-xs font-bold text-brand-orange">
-                  {t.chart_total}: ¥{total.toLocaleString()}
-                </span>
-              </div>
-              <div className="space-y-2">
-                {expenses.map((ex) => {
-                  const percent = total > 0 ? Math.round((ex.amount / total) * 100) : 0;
-                  return (
-                    <div key={ex.id} className="space-y-1">
-                      <div className="flex justify-between text-xs font-medium text-gray-700 dark:text-gray-300">
-                        <span>{ex.merchant} ({ex.category})</span>
-                        <span>¥{ex.amount.toLocaleString()} ({percent}%)</span>
-                      </div>
-                      <div className="w-full bg-gray-100 dark:bg-gray-700 h-2 rounded-full overflow-hidden">
-                        <div
-                          className="bg-brand-orange h-full rounded-full transition-all duration-500"
-                          style={{ width: `${percent}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+  if (!authUser) {
+    return (
+      <div className={`relative isolate min-h-screen overflow-hidden font-sans flex items-center justify-center p-4 transition-colors duration-200 ${theme === 'dark' ? 'dark bg-slate-950 text-gray-100' : 'bg-slate-100 text-gray-900'}`}>
+        <div aria-hidden="true" className="pointer-events-none absolute -left-24 top-[-8rem] h-80 w-80 rounded-full bg-orange-300/45 blur-3xl dark:bg-orange-600/20" />
+        <div aria-hidden="true" className="pointer-events-none absolute -right-24 bottom-[-7rem] h-96 w-96 rounded-full bg-sky-300/45 blur-3xl dark:bg-indigo-500/20" />
+        {notification && (
+          <Toast
+            message={notification.message}
+            type={notification.type}
+            onClose={() => setNotification(null)}
+          />
+        )}
+        <div className="relative w-full max-w-md rounded-[2rem] border border-white/70 bg-white/55 p-8 text-center space-y-8 shadow-2xl shadow-slate-900/10 backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/55 dark:shadow-black/30">
+          <div className="flex justify-center mb-6">
+            <div className="rounded-full border border-white/70 bg-white/50 p-4 shadow-lg shadow-orange-500/10 backdrop-blur-xl dark:border-white/10 dark:bg-orange-950/30">
+              <Icon1BLogo className="w-16 h-16 text-brand-orange" />
             </div>
-          );
-        };
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-3xl font-black tracking-tight text-gray-900 dark:text-white">O1BO</h1>
+            <p className="text-gray-500 dark:text-gray-400 font-medium">Business Trip Management</p>
+          </div>
 
-        // Voice AI assistant & wake word handler
-        const startListening = () => {
-          const windowRef = window as any;
-          const SpeechRecognition = windowRef.SpeechRecognition || windowRef.webkitSpeechRecognition;
-          if (!SpeechRecognition) {
-            alert('Speech Recognition is not supported in this browser.');
-            return;
+          <PasswordLogin language={language} onLogin={user => {
+            setAuthUser({ uid: user.uid, email: user.email, displayName: user.name });
+            setUserData(user); setView(ViewState.HOME);
+          }} />
+        </div>
+      </div>
+    );
+  }
+
+  if (userData && !userData.companyCode) return (
+    <main className={`min-h-screen p-6 ${theme === 'dark' ? 'dark bg-gray-900 text-white' : 'bg-gray-50'}`}>
+      <div className="mx-auto max-w-lg space-y-4">
+        <h1 className="text-2xl font-bold">{language === 'ja' ? 'O1BOを始める' : 'O1BO 시작하기'}</h1>
+        <CompanyMembership user={userData} language={language} onJoined={user => { setUserData(user); setView(ViewState.SETTINGS); }} />
+        <button onClick={handleLogout}>{language === 'ja' ? 'ログアウト' : '로그아웃'}</button>
+      </div>
+    </main>
+  );
+
+  return (
+    <div className={`min-h-screen font-sans pb-20 transition-colors duration-200 ${theme === 'dark' ? 'dark bg-gray-900 text-gray-100' : 'bg-gray-50 text-gray-900'}`}>
+      {expenseDraft && <ExpenseReview draft={expenseDraft} setDraft={setExpenseDraft} onSave={handleSaveExpense} onCancel={() => setExpenseDraft(null)} busy={loading} language={language} />}
+      {/* Sticky Top Navbar */}
+      <Navbar
+        theme={theme}
+        language={language}
+        toggleLanguage={() => setLanguage(l => l === 'ja' ? 'ko' : 'ja')}
+        setTheme={setTheme}
+        setNotification={setNotification}
+      />
+
+      <main className="p-4 max-w-md mx-auto">
+        {notification && (
+          <Toast
+            message={notification.message}
+            type={notification.type}
+            onClose={() => setNotification(null)}
+          />
+        )}
+
+        {/* View Router */}
+        {view === ViewState.HOME && (
+          <HomeView
+            t={t}
+            language={language}
+            activeTrip={activeTrip}
+            teamTrips={teamTrips}
+            checkIns={checkIns}
+            expenses={expenses}
+            fileInputRef={fileInputRef}
+            setView={setView}
+            setDurationFilter={setDurationFilter}
+            setCustomFilterStart={setCustomFilterStart}
+            setCustomFilterEnd={setCustomFilterEnd}
+            navigateToCreateTrip={navigateToCreateTrip}
+            handleManualCheckIn={handleManualCheckIn}
+            handleGenerateReport={handleGenerateReport}
+            renderExpenseChart={renderExpenseChart}
+            setActiveTrip={setActiveTrip}
+          />
+        )}
+
+        {view === ViewState.TRIP_DETAIL && (
+          <ScheduleView
+            t={t}
+            language={language}
+            theme={theme}
+            activeTrip={activeTrip}
+            allTrips={allTrips}
+            teamTrips={teamTrips}
+            checkIns={checkIns}
+            isNfcCheckoutEnabled={isNfcCheckoutEnabled}
+            showMap={showMap}
+            setShowMap={setShowMap}
+            showDateFilterMenu={showDateFilterMenu}
+            setShowDateFilterMenu={setShowDateFilterMenu}
+            durationFilter={durationFilter}
+            setDurationFilter={setDurationFilter}
+            customFilterStart={customFilterStart}
+            setCustomFilterStart={setCustomFilterStart}
+            customFilterEnd={customFilterEnd}
+            setCustomFilterEnd={setCustomFilterEnd}
+            calendarMonth={calendarMonth}
+            setCalendarMonth={setCalendarMonth}
+            calendarYear={calendarYear}
+            setCalendarYear={setCalendarYear}
+            editingItemId={editingItemId}
+            editItemData={editItemData}
+            setEditItemData={setEditItemData}
+            setActiveTrip={setActiveTrip}
+            setView={setView}
+            navigateToCreateTrip={navigateToCreateTrip}
+            handleShareTrip={handleShareTrip}
+            handleDeleteTrip={handleDeleteTrip}
+            handleManualCheckIn={handleManualCheckIn}
+            handleManualCheckOut={handleManualCheckOut}
+            handleCheckOut={handleCheckOut}
+            handleEditClick={handleEditClick}
+            handleSaveEdit={handleSaveEdit}
+            handleCancelEdit={handleCancelEdit}
+            handleDeleteItineraryItem={handleDeleteItineraryItem}
+            normalizeDateStr={normalizeDateStr}
+            addDaysToDateString={addDaysToDateString}
+          />
+        )}
+
+        {view === ViewState.REPORT && (
+          <ReportView
+            t={t}
+            language={language}
+            activeTrip={activeTrip}
+            allTrips={allTrips}
+            reportPrompt={reportPrompt}
+            setReportPrompt={setReportPrompt}
+            loading={loading}
+            isSending={isSending}
+            isEditingReport={isEditingReport}
+            setIsEditingReport={setIsEditingReport}
+            generatedReport={generatedReport}
+            setGeneratedReport={setGeneratedReport}
+            recipientEmail={recipientEmail}
+            setRecipientEmail={setRecipientEmail}
+            setActiveTrip={setActiveTrip}
+            setView={setView}
+            navigateToCreateTrip={navigateToCreateTrip}
+            handleGenerateReport={handleGenerateReport}
+            handleAiScheduleAction={handleAiScheduleAction}
+            handleSaveAndBack={handleSaveAndBack}
+            handleExportToWord={handleExportToWord}
+            handleShareReport={handleShareReport}
+            handleSendReport={handleSendReport}
+            renderMarkdown={renderMarkdown}
+            setNotification={setNotification}
+          />
+        )}
+
+        {view === ViewState.SETTINGS && (
+          <SettingsView
+            t={t}
+            language={language}
+            theme={theme}
+            setTheme={setTheme}
+            isNfcCheckoutEnabled={isNfcCheckoutEnabled}
+            setIsNfcCheckoutEnabled={setIsNfcCheckoutEnabled}
+            kakaoAppKey={kakaoAppKey}
+            setKakaoAppKey={setKakaoAppKey}
+            userData={userData}
+            userNameInput={userNameInput}
+            setUserNameInput={setUserNameInput}
+            teamCodeInput={teamCodeInput}
+            setTeamCodeInput={setTeamCodeInput}
+            teamMembers={teamMembers}
+            loading={loading}
+            setView={setView}
+            setShowHelpModal={setShowHelpModal}
+            onCompanyJoined={setUserData}
+            handleSaveNickname={handleSaveNickname}
+            handleGenerateTeamCode={handleGenerateTeamCode}
+            handleJoinTeam={handleJoinTeam}
+            handleCopyTeamCode={handleCopyTeamCode}
+            handleShareTeamCodeKakao={handleShareTeamCodeKakao}
+            handleLogout={handleLogout}
+            setNotification={setNotification}
+          />
+        )}
+
+        {view === ViewState.ADMIN_DASHBOARD && (
+          <AdminView
+            t={t}
+            userData={userData}
+            adminTrips={adminTrips}
+            adminExpenses={adminExpenses}
+            adminCheckIns={adminCheckIns}
+            companyUsers={companyUsers}
+            setView={setView}
+          />
+        )}
+
+        {view === ViewState.SCANNER && (
+          <ScannerView
+            t={t}
+            language={language}
+            activeTrip={activeTrip}
+            allTrips={allTrips}
+            fileInputRef={fileInputRef}
+            galleryInputRef={galleryInputRef}
+            onManualExpense={handleManualExpense}
+            expenses={expenses.filter(expense => expense.tripId === activeTrip?.id)}
+            onDeleteExpense={handleDeleteExpense}
+            busy={loading}
+            setActiveTrip={setActiveTrip}
+            navigateToCreateTrip={navigateToCreateTrip}
+          />
+        )}
+
+        {view === ViewState.CREATE_TRIP && (
+          <CreateTripView
+            t={t}
+            tripCreationSource={tripCreationSource}
+            newTripData={newTripData}
+            setNewTripData={setNewTripData}
+            setView={setView}
+            handleSaveTrip={handleSaveTrip}
+            loading={loading}
+          />
+        )}
+      </main>
+
+      {/* Fixed Bottom Navigation */}
+      <BottomNav
+        view={view}
+        setView={setView}
+        t={t}
+        setDurationFilter={setDurationFilter}
+        setCustomFilterStart={setCustomFilterStart}
+        setCustomFilterEnd={setCustomFilterEnd}
+        navigateToCreateTrip={navigateToCreateTrip}
+        activeTrip={activeTrip}
+        handleGenerateReport={handleGenerateReport}
+      />
+
+      {/* Hidden File Inputs for Camera & OCR */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files && e.target.files[0]) {
+            handleFileUpload(e.target.files[0]);
+            e.target.value = '';
           }
-
-          if (recognitionRef.current) {
-            try { recognitionRef.current.stop(); } catch (_) { }
+        }}
+      />
+      <input
+        type="file"
+        ref={galleryInputRef}
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files && e.target.files[0]) {
+            handleFileUpload(e.target.files[0]);
+            e.target.value = '';
           }
+        }}
+      />
 
-          const rec = new SpeechRecognition();
-          recognitionRef.current = rec;
-          rec.lang = language === 'ja' ? 'ja-JP' : 'ko-KR';
-          rec.continuous = false;
-          rec.interimResults = false;
+      {/* Voice Wake-Word Controller */}
+      <div className="fixed bottom-24 left-4 z-40 flex items-center space-x-2">
+        {isListening && (
+          <div className="bg-orange-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-lg animate-pulse flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+            {t.wake_word_listening}
+          </div>
+        )}
+        <button
+          onClick={() => setShowAIChat(true)}
+          className={`p-3 rounded-full shadow-lg transition-colors ${isListening ? 'bg-orange-100 dark:bg-orange-950/30 text-brand-orange dark:text-brand-orange' : 'bg-white dark:bg-gray-800 text-gray-400 dark:text-gray-500'}`}
+          title="제로보 열기"
+          aria-label="제로보 열기"
+        >
+          <span className="flex items-center gap-2"><IconBot className="w-5 h-5" />제로보</span>
+        </button>
+      </div>
 
-          rec.onstart = () => setIsListening(true);
-          rec.onend = () => setIsListening(false);
-          rec.onerror = () => setIsListening(false);
+      {/* AI Bot FAB & Chat Modal */}
+      <AIChatModal
+        key={authUser?.uid + ':' + userData?.companyCode}
+        language={language}
+        showAIChat={showAIChat}
+        setShowAIChat={setShowAIChat}
+        aiChatInput={aiChatInput}
+        setAiChatInput={setAiChatInput}
+        isListening={isListening}
+        startListening={startListening}
+        activeTripId={activeTrip?.id}
+        onChanged={refreshAgentTrip}
+      />
 
-          rec.onresult = (e: any) => {
-            const transcript = e.results[0][0].transcript;
-            setAiChatInput(transcript);
-          };
-
-          rec.start();
-        };
-
-        const handleAiChatSubmit = async () => {
-          if (!aiChatInput.trim() || !authUser) return;
-          setIsAiProcessing(true);
-
-          try {
-            const generated = await generateTripFromChat(aiChatInput, language);
-            if (generated && generated.title && generated.destination) {
-              const coords = await geocodeAddress(generated.destination);
-              const itineraryWithCoords: ItineraryItem[] = (generated.itinerary || []).map((item: any, idx: number) => ({
-                id: `item_ai_${Date.now()}_${idx}`,
-                locationName: item.locationName || generated.destination,
-                address: item.address || generated.destination,
-                scheduledTime: item.scheduledTime || '10:00',
-                coords: coords,
-                date: generated.startDate
-              }));
-
-              const newTripObj: Omit<Trip, 'id'> = {
-                userId: authUser.uid,
-                userName: userData?.name || authUser.displayName || '사용자',
-                userEmail: authUser.email || '',
-                companyCode: userData?.companyCode || 'DEFAULT',
-                teamCode: userData?.teamCode || '',
-                isSharedWithTeam: true,
-                title: generated.title,
-                destination: generated.destination,
-                startDate: generated.startDate || new Date().toISOString().split('T')[0],
-                endDate: generated.endDate || new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
-                purpose: generated.purpose || aiChatInput,
-                status: 'active',
-                itinerary: itineraryWithCoords.length > 0 ? itineraryWithCoords : [
-                  {
-                    id: `item_ai_default_${Date.now()}`,
-                    locationName: `${generated.destination} 도착`,
-                    address: generated.destination,
-                    scheduledTime: '10:00',
-                    coords: coords,
-                    date: generated.startDate
-                  }
-                ]
-              };
-
-              let fullCreatedTrip: Trip;
-              if (isLocalGuest) {
-                fullCreatedTrip = { id: `trip_ai_${Date.now()}`, ...newTripObj };
-                const next = [fullCreatedTrip, ...allTrips];
-                setAllTrips(next);
-                setActiveTrip(fullCreatedTrip);
-                saveLocalTrips(next);
-
-                if (fullCreatedTrip.teamCode) {
-                  setTeamTrips(prev => [fullCreatedTrip, ...prev]);
-                }
-              } else {
-                const created = await createTrip({
-                  ...newTripObj,
-                  itineraryJson: newTripObj.itinerary
-                }).catch(() => null);
-                fullCreatedTrip = created || { id: `trip_ai_${Date.now()}`, ...newTripObj };
-                setActiveTrip(fullCreatedTrip);
-              }
-
-              setGeneratedTripForShare(fullCreatedTrip);
-              setAiChatInput('');
-            } else {
-              setNotification({ message: t.ai_bot_error, type: 'error' });
-            }
-          } catch (err: any) {
-            setNotification({ message: err.message || t.ai_bot_error, type: 'error' });
-          } finally {
-            setIsAiProcessing(false);
-          }
-        };
-
-        const handleCancelAiProcessing = () => {
-          setIsAiProcessing(false);
-        };
-
-        if (!isAuthReady) {
-          return (
-            <div className={`min-h-screen flex items-center justify-center transition-colors duration-200 ${theme === 'dark' ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-orange dark:border-brand-orange"></div>
-            </div>
-          );
-        }
-
-        if (!authUser) {
-          return (
-            <div className={`min-h-screen font-sans flex items-center justify-center p-4 transition-colors duration-200 ${theme === 'dark' ? 'dark bg-gray-900 text-gray-100' : 'bg-gray-50 text-gray-900'}`}>
-              {notification && (
-                <Toast
-                  message={notification.message}
-                  type={notification.type}
-                  onClose={() => setNotification(null)}
-                />
-              )}
-              <div className="w-full max-w-md bg-white dark:bg-gray-800 rounded-3xl shadow-xl p-8 text-center space-y-8 border border-gray-100 dark:border-gray-700">
-                <div className="flex justify-center mb-6">
-                  <div className="p-4 bg-orange-50 dark:bg-orange-950/40 rounded-full">
-                    <Icon1BLogo className="w-16 h-16 text-brand-orange" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <h1 className="text-3xl font-black tracking-tight text-gray-900 dark:text-white">O1BO</h1>
-                  <p className="text-gray-500 dark:text-gray-400 font-medium">Business Trip Management</p>
-                </div>
-
-                <div className="space-y-5 text-left">
-                  <button
-                    onClick={handleLogin}
-                    disabled={isLoggingIn}
-                    className={`w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 text-gray-800 dark:text-white p-4 rounded-xl font-bold flex items-center justify-center gap-3 shadow-sm active:scale-95 transition-all ${isLoggingIn ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    {isLoggingIn ? (
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-brand-orange"></div>
-                    ) : (
-                      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
-                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
-                      </svg>
-                    )}
-                    {isLoggingIn ? '로그인 처리 중...' : 'Google 계정으로 로그인'}
-                  </button>
-
-                  <button
-                    onClick={handleGuestLogin}
-                    disabled={isLoggingIn}
-                    className={`w-full bg-gradient-to-r from-orange-500 to-brand-orange hover:from-brand-orange hover:to-orange-600 text-white p-4 rounded-xl font-bold flex items-center justify-center gap-3 shadow-md active:scale-95 transition-all ${isLoggingIn ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <IconZap className="w-5 h-5 text-orange-100" />
-                    {t.btn_guest_login}
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        }
-
-        return (
-          <div className={`min-h-screen font-sans pb-20 transition-colors duration-200 ${theme === 'dark' ? 'dark bg-gray-900 text-gray-100' : 'bg-gray-50 text-gray-900'}`}>
-            {/* Sticky Top Navbar */}
-            <Navbar
-              theme={theme}
-              language={language}
-              toggleLanguage={() => setLanguage(l => l === 'ja' ? 'ko' : 'ja')}
-              setTheme={setTheme}
-              setNotification={setNotification}
-            />
-
-            <main className="p-4 max-w-md mx-auto">
-              {notification && (
-                <Toast
-                  message={notification.message}
-                  type={notification.type}
-                  onClose={() => setNotification(null)}
-                />
-              )}
-
-              {/* View Router */}
-              {view === ViewState.HOME && (
-                <HomeView
-                  t={t}
-                  language={language}
-                  activeTrip={activeTrip}
-                  teamTrips={teamTrips}
-                  checkIns={checkIns}
-                  expenses={expenses}
-                  fileInputRef={fileInputRef}
-                  setView={setView}
-                  setDurationFilter={setDurationFilter}
-                  setCustomFilterStart={setCustomFilterStart}
-                  setCustomFilterEnd={setCustomFilterEnd}
-                  navigateToCreateTrip={navigateToCreateTrip}
-                  handleManualCheckIn={handleManualCheckIn}
-                  handleGenerateReport={handleGenerateReport}
-                  renderExpenseChart={renderExpenseChart}
-                  setActiveTrip={setActiveTrip}
-                />
-              )}
-
-              {view === ViewState.TRIP_DETAIL && (
-                <ScheduleView
-                  t={t}
-                  language={language}
-                  theme={theme}
-                  activeTrip={activeTrip}
-                  allTrips={allTrips}
-                  teamTrips={teamTrips}
-                  checkIns={checkIns}
-                  isNfcCheckoutEnabled={isNfcCheckoutEnabled}
-                  showMap={showMap}
-                  setShowMap={setShowMap}
-                  showDateFilterMenu={showDateFilterMenu}
-                  setShowDateFilterMenu={setShowDateFilterMenu}
-                  durationFilter={durationFilter}
-                  setDurationFilter={setDurationFilter}
-                  customFilterStart={customFilterStart}
-                  setCustomFilterStart={setCustomFilterStart}
-                  customFilterEnd={customFilterEnd}
-                  setCustomFilterEnd={setCustomFilterEnd}
-                  calendarMonth={calendarMonth}
-                  setCalendarMonth={setCalendarMonth}
-                  calendarYear={calendarYear}
-                  setCalendarYear={setCalendarYear}
-                  editingItemId={editingItemId}
-                  editItemData={editItemData}
-                  setEditItemData={setEditItemData}
-                  setActiveTrip={setActiveTrip}
-                  setView={setView}
-                  navigateToCreateTrip={navigateToCreateTrip}
-                  handleShareTrip={handleShareTrip}
-                  handleDeleteTrip={handleDeleteTrip}
-                  handleManualCheckIn={handleManualCheckIn}
-                  handleManualCheckOut={handleManualCheckOut}
-                  handleCheckOut={handleCheckOut}
-                  handleEditClick={handleEditClick}
-                  handleSaveEdit={handleSaveEdit}
-                  handleCancelEdit={handleCancelEdit}
-                  handleDeleteItineraryItem={handleDeleteItineraryItem}
-                  normalizeDateStr={normalizeDateStr}
-                  addDaysToDateString={addDaysToDateString}
-                />
-              )}
-
-              {view === ViewState.REPORT && (
-                <ReportView
-                  t={t}
-                  language={language}
-                  activeTrip={activeTrip}
-                  allTrips={allTrips}
-                  reportPrompt={reportPrompt}
-                  setReportPrompt={setReportPrompt}
-                  loading={loading}
-                  isSending={isSending}
-                  isEditingReport={isEditingReport}
-                  setIsEditingReport={setIsEditingReport}
-                  generatedReport={generatedReport}
-                  setGeneratedReport={setGeneratedReport}
-                  recipientEmail={recipientEmail}
-                  setRecipientEmail={setRecipientEmail}
-                  setActiveTrip={setActiveTrip}
-                  setView={setView}
-                  navigateToCreateTrip={navigateToCreateTrip}
-                  handleGenerateReport={handleGenerateReport}
-                  handleAiScheduleAction={handleAiScheduleAction}
-                  handleSaveAndBack={handleSaveAndBack}
-                  handleExportToWord={handleExportToWord}
-                  handleShareReport={handleShareReport}
-                  handleSendReport={handleSendReport}
-                  renderMarkdown={renderMarkdown}
-                  setNotification={setNotification}
-                />
-              )}
-
-              {view === ViewState.SETTINGS && (
-                <SettingsView
-                  t={t}
-                  language={language}
-                  theme={theme}
-                  setTheme={setTheme}
-                  isNfcCheckoutEnabled={isNfcCheckoutEnabled}
-                  setIsNfcCheckoutEnabled={setIsNfcCheckoutEnabled}
-                  kakaoAppKey={kakaoAppKey}
-                  setKakaoAppKey={setKakaoAppKey}
-                  userData={userData}
-                  userNameInput={userNameInput}
-                  setUserNameInput={setUserNameInput}
-                  companyCodeInput={companyCodeInput}
-                  setCompanyCodeInput={setCompanyCodeInput}
-                  teamCodeInput={teamCodeInput}
-                  setTeamCodeInput={setTeamCodeInput}
-                  teamMembers={teamMembers}
-                  loading={loading}
-                  setView={setView}
-                  setShowHelpModal={setShowHelpModal}
-                  handleSaveNickname={handleSaveNickname}
-                  handleJoinCompany={handleJoinCompany}
-                  handleGenerateTeamCode={handleGenerateTeamCode}
-                  handleJoinTeam={handleJoinTeam}
-                  handleCopyTeamCode={handleCopyTeamCode}
-                  handleShareTeamCodeKakao={handleShareTeamCodeKakao}
-                  handleLogout={handleLogout}
-                  cleanDecemberRecords={cleanDecemberRecords}
-                  setNotification={setNotification}
-                />
-              )}
-
-              {view === ViewState.ADMIN_DASHBOARD && (
-                <AdminView
-                  t={t}
-                  userData={userData}
-                  adminTrips={adminTrips}
-                  adminExpenses={adminExpenses}
-                  adminCheckIns={adminCheckIns}
-                  companyUsers={companyUsers}
-                  setView={setView}
-                />
-              )}
-
-              {view === ViewState.SCANNER && (
-                <ScannerView
-                  t={t}
-                  language={language}
-                  activeTrip={activeTrip}
-                  allTrips={allTrips}
-                  fileInputRef={fileInputRef}
-                  galleryInputRef={galleryInputRef}
-                  setActiveTrip={setActiveTrip}
-                  navigateToCreateTrip={navigateToCreateTrip}
-                />
-              )}
-
-              {view === ViewState.CREATE_TRIP && (
-                <CreateTripView
-                  t={t}
-                  tripCreationSource={tripCreationSource}
-                  newTripData={newTripData}
-                  setNewTripData={setNewTripData}
-                  setView={setView}
-                  handleSaveTrip={handleSaveTrip}
-                />
-              )}
-            </main>
-
-            {/* Fixed Bottom Navigation */}
-            <BottomNav
-              view={view}
-              setView={setView}
-              t={t}
-              setDurationFilter={setDurationFilter}
-              setCustomFilterStart={setCustomFilterStart}
-              setCustomFilterEnd={setCustomFilterEnd}
-              navigateToCreateTrip={navigateToCreateTrip}
-              activeTrip={activeTrip}
-              handleGenerateReport={handleGenerateReport}
-            />
-
-            {/* Hidden File Inputs for Camera & OCR */}
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={(e) => {
-                if (e.target.files && e.target.files[0]) {
-                  handleFileUpload(e.target.files[0]);
-                }
-              }}
-            />
-            <input
-              type="file"
-              ref={galleryInputRef}
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                if (e.target.files && e.target.files[0]) {
-                  handleFileUpload(e.target.files[0]);
-                }
-              }}
-            />
-
-            {/* Voice Wake-Word Controller */}
-            <div className="fixed bottom-24 left-4 z-40 flex items-center space-x-2">
-              {isWakeWordEnabled && (
-                <div className="bg-orange-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-lg animate-pulse flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-white animate-ping" />
-                  {t.wake_word_listening}
-                </div>
-              )}
+      {/* NFC Modal */}
+      {nfcModal && nfcModal.show && (
+        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl border border-gray-100 dark:border-gray-700 text-center space-y-5 animate-fade-in">
+            <div className="flex justify-between items-center border-b border-gray-100 dark:border-gray-700 pb-3">
+              <span className="text-xs font-bold text-brand-orange uppercase tracking-wider flex items-center gap-1">
+                <IconZap className="w-4 h-4" />
+                {t.nfc_title}
+              </span>
               <button
-                onClick={() => setIsWakeWordEnabled(!isWakeWordEnabled)}
-                className={`p-3 rounded-full shadow-lg transition-colors ${isWakeWordEnabled ? 'bg-orange-100 dark:bg-orange-950/30 text-brand-orange dark:text-brand-orange' : 'bg-white dark:bg-gray-800 text-gray-400 dark:text-gray-500'}`}
-                title={t.wake_word_enable}
+                onClick={() => setNfcModal(null)}
+                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
               >
-                <IconMic className="w-5 h-5" />
+                <IconX className="w-4 h-4" />
               </button>
             </div>
 
-            {/* AI Bot FAB & Chat Modal */}
-            <AIChatModal
-              t={t}
-              language={language}
-              showAIChat={showAIChat}
-              setShowAIChat={setShowAIChat}
-              generatedTripForShare={generatedTripForShare}
-              setGeneratedTripForShare={setGeneratedTripForShare}
-              isAiProcessing={isAiProcessing}
-              aiChatInput={aiChatInput}
-              setAiChatInput={setAiChatInput}
-              isListening={isListening}
-              startListening={startListening}
-              handleShareTrip={handleShareTrip}
-              handleCancelAiProcessing={handleCancelAiProcessing}
-              handleAiChatSubmit={handleAiChatSubmit}
-              setView={setView}
-            />
-
-            {/* NFC Modal */}
-            {nfcModal && nfcModal.show && (
-              <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-                <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl border border-gray-100 dark:border-gray-700 text-center space-y-5 animate-fade-in">
-                  <div className="flex justify-between items-center border-b border-gray-100 dark:border-gray-700 pb-3">
-                    <span className="text-xs font-bold text-brand-orange uppercase tracking-wider flex items-center gap-1">
-                      <IconZap className="w-4 h-4" />
-                      {t.nfc_title}
-                    </span>
-                    <button
-                      onClick={() => setNfcModal(null)}
-                      className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
-                    >
-                      <IconX className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <div className="py-4 space-y-4">
-                    <div className="w-20 h-20 mx-auto rounded-full bg-orange-50 dark:bg-orange-950/30 flex items-center justify-center relative">
-                      <IconZap className={`w-10 h-10 ${nfcModal.status === 'scanning' ? 'text-brand-orange animate-bounce' : 'text-brand-orange'}`} />
-                      {nfcModal.status === 'scanning' && (
-                        <span className="absolute inset-0 rounded-full border-4 border-brand-orange border-t-transparent animate-spin" />
-                      )}
-                    </div>
-
-                    <div className="space-y-1">
-                      <h4 className="font-extrabold text-gray-900 dark:text-white text-base">
-                        {nfcModal.item?.locationName}
-                      </h4>
-                      <p className={`text-xs ${nfcModal.status === 'success' ? 'text-green-600 dark:text-green-400 font-bold' :
-                          nfcModal.status === 'error' ? 'text-red-500 font-bold' :
-                            nfcModal.status === 'scanning' ? 'text-brand-orange dark:text-brand-orange font-medium animate-pulse' :
-                              'text-gray-500 dark:text-gray-400'
-                        }`}>
-                        {nfcModal.status === 'success' ? t.nfc_success :
-                          nfcModal.status === 'error' ? (nfcModal.errorMsg || t.nfc_error) :
-                            nfcModal.status === 'scanning' ? t.nfc_waiting :
-                              `${t.nfc_waiting} (GPS 검증 완료)`}
-                      </p>
-                    </div>
-
-                    <div className="space-y-3.5 pt-2">
-                      {nfcModal.distance > 50 && nfcModal.status === 'idle' && (
-                        <div className="space-y-2">
-                          <p className="text-xs text-red-500 text-left bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 p-3 rounded-xl leading-relaxed">
-                            ⚠️ {t.nfc_gps_warning.replace('{dist}', String(nfcModal.distance))}
-                          </p>
-                          <button
-                            onClick={() => setNfcModal(prev => prev ? { ...prev, distance: 45 } : null)}
-                            className="w-full text-xs font-bold py-2 bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 border border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400 rounded-xl transition-all"
-                          >
-                            🔓 {t.nfc_gps_bypass}
-                          </button>
-                        </div>
-                      )}
-
-                      {nfcModal.status === 'idle' && nfcModal.distance <= 50 && (
-                        <button
-                          onClick={startNfcScanning}
-                          className="w-full bg-brand-orange hover:bg-orange-600 text-white font-bold py-3.5 rounded-xl shadow-md shadow-orange-500/20 active:scale-95 transition-all text-sm"
-                        >
-                          📡 {language === 'ja' ? 'NFCスキャン開始' : 'NFC 스캔 시작하기'}
-                        </button>
-                      )}
-
-                      {nfcModal.status !== 'success' && (
-                        <button
-                          onClick={simulateNfcScan}
-                          disabled={nfcModal.status === 'scanning'}
-                          className="w-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-650 text-gray-700 dark:text-gray-200 font-bold py-3 rounded-xl transition-all text-xs border border-gray-200/40 dark:border-gray-650"
-                        >
-                          🛠️ {t.nfc_mock_btn}
-                        </button>
-                      )}
-
-                      {nfcModal.status === 'scanning' && (
-                        <button
-                          onClick={() => setNfcModal(prev => prev ? { ...prev, status: 'idle', isChecking: false } : null)}
-                          className="w-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 font-bold py-3 rounded-xl transition-all text-xs"
-                        >
-                          {t.btn_cancel}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
+            <div className="py-4 space-y-4">
+              <div className="w-20 h-20 mx-auto rounded-full bg-orange-50 dark:bg-orange-950/30 flex items-center justify-center relative">
+                <IconZap className={`w-10 h-10 ${nfcModal.status === 'scanning' ? 'text-brand-orange animate-bounce' : 'text-brand-orange'}`} />
+                {nfcModal.status === 'scanning' && (
+                  <span className="absolute inset-0 rounded-full border-4 border-brand-orange border-t-transparent animate-spin" />
+                )}
               </div>
-            )}
 
-            {showTutorial && (
-              <TutorialModal
-                language={language}
-                tutorialStep={tutorialStep}
-                setTutorialStep={setTutorialStep}
-                setShowTutorial={setShowTutorial}
-              />
-            )}
+              <div className="space-y-1">
+                <h4 className="font-extrabold text-gray-900 dark:text-white text-base">
+                  {nfcModal.item?.locationName}
+                </h4>
+                <p className={`text-xs ${nfcModal.status === 'success' ? 'text-green-600 dark:text-green-400 font-bold' :
+                  nfcModal.status === 'error' ? 'text-red-500 font-bold' :
+                    nfcModal.status === 'scanning' ? 'text-brand-orange dark:text-brand-orange font-medium animate-pulse' :
+                      'text-gray-500 dark:text-gray-400'
+                  }`}>
+                  {nfcModal.status === 'success' ? t.nfc_success :
+                    nfcModal.status === 'error' ? (nfcModal.errorMsg || t.nfc_error) :
+                      nfcModal.status === 'scanning' ? t.nfc_waiting :
+                        `${t.nfc_waiting} (${nfcModal.isChecking ? '위치 확인 중' : nfcModal.distance <= 50 ? '현장 반경 내' : '현장 반경 밖'})`}
+                </p>
+              </div>
 
-            {showHelpModal && (
-              <HelpModal
-                language={language}
-                setShowHelpModal={setShowHelpModal}
-                setShowTutorial={setShowTutorial}
-                setTutorialStep={setTutorialStep}
-              />
-            )}
+              <div className="space-y-3.5 pt-2">
+                {nfcModal.distance > 50 && nfcModal.status === 'idle' && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-red-500 text-left bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 p-3 rounded-xl leading-relaxed">
+                      ⚠️ {t.nfc_gps_warning.replace('{dist}', String(nfcModal.distance))}
+                    </p>
+
+                  </div>
+                )}
+
+                {nfcModal.status === 'idle' && nfcModal.distance <= 50 && (
+                  <button
+                    onClick={startNfcScanning}
+                    className="w-full bg-brand-orange hover:bg-orange-600 text-white font-bold py-3.5 rounded-xl shadow-md shadow-orange-500/20 active:scale-95 transition-all text-sm"
+                  >
+                    📡 {language === 'ja' ? 'NFCスキャン開始' : 'NFC 스캔 시작하기'}
+                  </button>
+                )}
+
+                {nfcModal.status === 'scanning' && (
+                  <button
+                    onClick={() => setNfcModal(prev => prev ? { ...prev, status: 'idle', isChecking: false } : null)}
+                    className="w-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 font-bold py-3 rounded-xl transition-all text-xs"
+                  >
+                    {t.btn_cancel}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
-        );
-      };
+        </div>
+      )}
 
-      export default App;
+      {showTutorial && (
+        <TutorialModal
+          language={language}
+          tutorialStep={tutorialStep}
+          setTutorialStep={setTutorialStep}
+          setShowTutorial={setShowTutorial}
+        />
+      )}
+
+      {showHelpModal && (
+        <HelpModal
+          language={language}
+          setShowHelpModal={setShowHelpModal}
+          setShowTutorial={setShowTutorial}
+          setTutorialStep={setTutorialStep}
+        />
+      )}
+    </div>
+  );
+};
+
+export default App;

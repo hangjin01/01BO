@@ -1,3 +1,4 @@
+import { CompanyMembership } from '../CompanyMembership';
 import React from 'react';
 import { ViewState, User, Lang } from '../../types';
 import { IconSun, IconMoon, IconZap, IconBriefcase, IconFileText, IconUserCheck, IconUser, IconEdit } from '../Icons';
@@ -12,10 +13,9 @@ interface SettingsViewProps {
   kakaoAppKey: string;
   setKakaoAppKey: (key: string) => void;
   userData: User | null;
+  onCompanyJoined: (user: User) => void;
   userNameInput: string;
   setUserNameInput: (name: string) => void;
-  companyCodeInput: string;
-  setCompanyCodeInput: (code: string) => void;
   teamCodeInput: string;
   setTeamCodeInput: (code: string) => void;
   teamMembers: User[];
@@ -23,13 +23,11 @@ interface SettingsViewProps {
   setView: (view: ViewState) => void;
   setShowHelpModal: (show: boolean) => void;
   handleSaveNickname: () => void;
-  handleJoinCompany: () => void;
   handleGenerateTeamCode: () => void;
   handleJoinTeam: () => void;
   handleCopyTeamCode: () => void;
   handleShareTeamCodeKakao: () => void;
   handleLogout: () => void;
-  cleanDecemberRecords: (confirm: boolean) => void;
   setNotification: (notif: { message: string; type: 'success' | 'error' } | null) => void;
 }
 
@@ -43,10 +41,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   kakaoAppKey,
   setKakaoAppKey,
   userData,
+  onCompanyJoined,
   userNameInput,
   setUserNameInput,
-  companyCodeInput,
-  setCompanyCodeInput,
   teamCodeInput,
   setTeamCodeInput,
   teamMembers,
@@ -54,17 +51,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   setView,
   setShowHelpModal,
   handleSaveNickname,
-  handleJoinCompany,
   handleGenerateTeamCode,
   handleJoinTeam,
   handleCopyTeamCode,
   handleShareTeamCodeKakao,
   handleLogout,
-  cleanDecemberRecords,
   setNotification,
 }) => {
   return (
     <div className="space-y-6">
+      {userData && <CompanyMembership user={userData} language={language} onJoined={onCompanyJoined} />}
       {/* Profile & Nickname Card */}
       <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 space-y-3">
         <div className="flex items-center gap-3">
@@ -109,10 +105,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
             <div>
               <h3 className="font-extrabold text-base leading-tight">
-                {language === 'ko' ? '👥 팀원 출장 일정 실시간 공유' : '👥 チーム員出張日程リアルタイム共有'}
+                {language === 'ko' ? '👥 팀 소속 관리' : '👥 チーム員出張日程リアルタイム共有'}
               </h3>
               <p className="text-[11px] text-orange-100 font-medium">
-                {language === 'ko' ? '팀 코드를 통해 팀원들과 서로의 출장 정보를 실시간으로 공유하세요.' : 'チームコードを通じてチーム員とお互いの出張情報をリアルタイム共有します。'}
+                {language === 'ko' ? '팀 코드로 소속 팀을 설정합니다. 다른 직원의 출장 현황은 사장만 볼 수 있습니다.' : 'チームコードを通じてチーム員とお互いの出張情報をリアルタイム共有します。'}
               </p>
             </div>
           </div>
@@ -143,7 +139,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
                   <path d="M12 3c-4.97 0-9 3.185-9 7.115 0 2.557 1.707 4.8 4.27 6.054-.188.702-.68 2.531-.777 2.947-.118.503.193.497.402.357.164-.109 2.62-1.78 3.674-2.499.462.083.939.126 1.431.126 4.97 0 9-3.186 9-7.115C21 6.185 16.97 3 12 3z"/>
                 </svg>
-                {language === 'ko' ? '카톡으로 초대' : 'カカオで招待'}
+                {language === 'ko' ? '초대 코드 공유' : '招待コードを共有'}
               </button>
             </div>
 
@@ -286,36 +282,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
-      {userData?.role === 'employee' && !userData.companyCode && (
-        <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-700/50 rounded-xl p-4 shadow-sm mt-4">
-          <div className="flex items-start space-x-3">
-            <div className="p-2 bg-yellow-100 dark:bg-yellow-800/50 rounded-lg">
-              <IconBriefcase className="w-5 h-5 text-yellow-700 dark:text-yellow-400" />
-            </div>
-            <div className="flex-1">
-              <h3 className="text-sm font-bold text-yellow-800 dark:text-yellow-300 mb-1">{t.company_code_title}</h3>
-              <p className="text-xs text-yellow-700 dark:text-yellow-400 mb-3">{t.company_code_desc}</p>
-              <div className="flex space-x-2">
-                <input
-                  type="text"
-                  value={companyCodeInput}
-                  onChange={(e) => setCompanyCodeInput(e.target.value)}
-                  placeholder="e.g. ABCDEF"
-                  className="flex-1 px-3 py-2 text-sm border border-yellow-300 dark:border-yellow-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-yellow-500"
-                />
-                <button
-                  onClick={handleJoinCompany}
-                  disabled={!companyCodeInput.trim() || loading}
-                  className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:opacity-50 text-white text-sm font-bold rounded-lg transition-colors"
-                >
-                  {t.btn_join_company}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {userData?.role === 'admin' && (
         <div className="mt-8 space-y-4">
           <h2 className="text-xl font-bold text-gray-800 dark:text-white">Admin Tools</h2>
@@ -327,19 +293,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             Admin Dashboard
           </button>
           
-          <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 space-y-3">
-            <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300">데이터베이스 유지 관리</h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              파이어베이스에 생성 및 누적된 출장 계획, 체크인 기록, 영수증 정산 데이터를 깨끗하게 비웁니다.
-            </p>
-            <button
-              onClick={() => cleanDecemberRecords(true)}
-              disabled={loading}
-              className="w-full bg-red-50 hover:bg-red-100 border border-red-200 dark:border-red-900/30 text-red-600 dark:text-red-400 py-3 rounded-xl font-bold text-sm transition-all active:scale-95"
-            >
-              {loading ? '데이터 정리 중...' : '데이터 강제 정리'}
-            </button>
-          </div>
+
         </div>
       )}
 

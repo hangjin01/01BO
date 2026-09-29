@@ -61,9 +61,6 @@ export const BottomNav: React.FC<BottomNavProps> = ({
 
       <button 
         onClick={() => {
-          if (activeTrip) {
-            handleGenerateReport();
-          }
           setView(ViewState.REPORT);
         }}
         className={`flex flex-col items-center space-y-1 transition-all ${view === ViewState.REPORT ? 'text-brand-orange font-black scale-105' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}

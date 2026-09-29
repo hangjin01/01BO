@@ -91,7 +91,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
                   key={trip.id}
                   onClick={() => {
                     setActiveTrip(trip);
-                    handleGenerateReport();
+                    setGeneratedReport(trip.report || '');
                   }}
                   className="w-full p-3 text-left bg-white dark:bg-gray-800 border border-gray-150 dark:border-gray-700 hover:border-brand-orange rounded-xl flex justify-between items-center text-xs font-bold transition-all text-gray-700 dark:text-gray-200"
                 >
@@ -183,7 +183,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => handleGenerateReport(reportPrompt)}
-            disabled={loading || !reportPrompt.trim()}
+            disabled={loading}
             className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-white dark:bg-gray-800 border border-orange-200 dark:border-orange-900/40 text-brand-orange dark:text-brand-orange font-bold rounded-xl text-xs shadow-sm hover:bg-orange-50 dark:hover:bg-orange-950/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
           >
             <IconFileText className="w-3.5 h-3.5 text-brand-orange" />
@@ -210,10 +210,11 @@ export const ReportView: React.FC<ReportViewProps> = ({
           <div className="bg-gray-50 dark:bg-gray-800/50 px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
             <span className="text-xs font-bold text-gray-500 dark:text-gray-400 flex items-center">
               <IconZap className="w-3 h-3 mr-1 text-yellow-500" />
-              {t.report_ai_badge}
+              {language === 'ja' ? '報告書' : '보고서'}
             </span>
             <div className="flex space-x-2">
               <button 
+                aria-label={language === 'ja' ? '報告書を編集' : '보고서 편집'}
                 onClick={() => setIsEditingReport(!isEditingReport)}
                 className="p-1.5 hover:bg-white dark:hover:bg-gray-700 rounded text-gray-500 dark:text-gray-400 transition-colors"
               >
@@ -232,6 +233,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
             {isEditingReport ? (
               <textarea 
                 className="w-full h-96 text-sm text-gray-700 dark:text-gray-300 leading-relaxed p-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-100 dark:focus:ring-orange-500/30 bg-white dark:bg-gray-700 outline-none"
+                aria-label={language === 'ja' ? '報告書本文' : '보고서 본문'}
                 value={generatedReport}
                 onChange={(e) => setGeneratedReport(e.target.value)}
               />
@@ -242,6 +244,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
               />
             )}
           </div>
+          <div className="px-4 pb-4 text-right"><button disabled={loading || !generatedReport.trim()} onClick={handleSaveAndBack} className="bg-orange-500 text-white px-4 py-2 rounded-lg disabled:opacity-50">{language === 'ja' ? '保存して戻る' : '저장 후 돌아가기'}</button></div>
           {/* Email and Submit Section */}
           <div className="p-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-700 space-y-3">
             <div>
@@ -257,6 +260,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <button 
                 onClick={handleExportToWord}
+                disabled={!generatedReport.trim()}
                 className="w-full bg-white hover:bg-gray-50 dark:bg-gray-700 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 font-bold py-3 rounded-xl shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-2 text-sm"
               >
                 <IconFileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
@@ -264,6 +268,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
               </button>
               <button 
                 onClick={handleShareReport}
+                disabled={!generatedReport.trim()}
                 className="w-full bg-[#FEE500] hover:bg-[#FEE500]/90 text-[#191919] font-bold py-3 rounded-xl shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-2 text-sm"
               >
                 <svg className="w-4 h-4 fill-current text-[#191919]" viewBox="0 0 24 24">
@@ -273,6 +278,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
               </button>
               <button 
                 onClick={handleSendReport}
+                disabled={isSending || !generatedReport}
                 className="w-full bg-brand-orange hover:bg-orange-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-orange-500/20 active:scale-95 transition-transform flex items-center justify-center gap-2 text-sm"
               >
                 <IconSend className="w-4 h-4" />

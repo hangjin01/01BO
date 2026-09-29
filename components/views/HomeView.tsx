@@ -173,10 +173,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <div className="flex items-center justify-between px-1">
             <h3 className="font-extrabold text-gray-900 dark:text-white text-sm tracking-tight flex items-center gap-1.5">
               <IconUserCheck className="w-4 h-4 text-brand-orange" />
-              <span>{language === 'ko' ? '👥 우리 팀원 출장 현황' : '👥 チーム員出張状況'}</span>
+              <span>{language === 'ko' ? '👥 회사 출장 현황 (사장 전용)' : '👥 チーム員出張状況'}</span>
             </h3>
             <span className="text-[10px] font-bold text-brand-orange bg-orange-50 dark:bg-orange-950/40 px-2 py-0.5 rounded-full">
-              {teamTrips.length}{language === 'ko' ? '건 공유됨' : '件共有'}
+              {teamTrips.length}{language === 'ko' ? '건 출장' : '件の出張'}
             </span>
           </div>
 
@@ -269,9 +269,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
               <button
                 onClick={() => {
                   setView(ViewState.SCANNER);
-                  if (activeTrip) {
-                    setTimeout(() => fileInputRef.current?.click(), 100);
-                  }
                 }}
                 className="bg-white/15 hover:bg-white/25 text-white border border-white/20 text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-1.5 transition-all active:scale-95"
               >
@@ -281,7 +278,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
               <button
                 onClick={() => {
-                  if (activeTrip) handleGenerateReport();
                   setView(ViewState.REPORT);
                 }}
                 className="bg-white/15 hover:bg-white/25 text-white border border-white/20 text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-1.5 transition-all active:scale-95"
@@ -331,11 +327,11 @@ export const HomeView: React.FC<HomeViewProps> = ({
             <div className="flex items-center gap-2 pt-1 pb-1">
               <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 text-xs font-bold border border-sky-100 dark:border-sky-900/40">
                 <IconCloudSun className="w-4 h-4 text-amber-500" />
-                <span>59°F • 54°F • 78°F</span>
+                <span>{language === 'ja' ? '天気情報未接続' : '날씨 정보 미연결'}</span>
               </div>
               <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-xs font-bold border border-emerald-100 dark:border-emerald-900/40">
                 <IconMapPin className="w-4 h-4 text-emerald-500" />
-                <span>GPS Live 50m</span>
+                <span>{language === 'ja' ? '現場半径 50m' : '현장 반경 50m'}</span>
               </div>
             </div>
 
@@ -393,7 +389,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <h3 className="font-extrabold text-gray-900 dark:text-white text-sm tracking-tight">
             {t.recent_activity_title}
           </h3>
-          <span className="text-[10px] font-bold text-gray-400 uppercase">Realtime Feed</span>
+          <span className="text-[10px] font-bold text-gray-400 uppercase">Recent Activity</span>
         </div>
         
         {checkIns.length === 0 && expenses.length === 0 ? (

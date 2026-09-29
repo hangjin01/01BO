@@ -121,7 +121,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
               onClick={() => setTripFilterTab('team')}
               className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${tripFilterTab === 'team' ? 'bg-white dark:bg-gray-700 text-brand-orange shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}
             >
-              👥 {language === 'ko' ? `팀원 출장 (${teamTrips.length})` : `チーム員出張 (${teamTrips.length})`}
+              👥 {language === 'ko' ? `회사 출장 (${teamTrips.length})` : `チーム員出張 (${teamTrips.length})`}
             </button>
           </div>
         )}

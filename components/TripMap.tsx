@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
+import { sanitizeString } from '../services/apiService';
 import { ItineraryItem } from '../types';
 
 export const TripMap = ({ items, t, theme }: { items: ItineraryItem[]; t: any; theme?: 'light' | 'dark' }) => {
@@ -55,11 +56,11 @@ export const TripMap = ({ items, t, theme }: { items: ItineraryItem[]; t: any; t
       const popupContent = document.createElement('div');
       popupContent.innerHTML = `
         <div style="font-family:'Noto Sans JP',sans-serif; background-color: ${theme === 'dark' ? '#1f2937' : 'white'}; color: ${theme === 'dark' ? '#f3f4f6' : '#1e1b4b'}; padding: 4px; border-radius: 4px;">
-          <strong style="font-size:14px;">${item.locationName}</strong><br/>
-          <span style="color:${theme === 'dark' ? '#9ca3af' : '#6b7280'};font-size:12px;">${item.scheduledTime}</span><br/>
+          <strong style="font-size:14px;">${sanitizeString(item.locationName)}</strong><br/>
+          <span style="color:${theme === 'dark' ? '#9ca3af' : '#6b7280'};font-size:12px;">${sanitizeString(item.scheduledTime)}</span><br/>
           <div style="margin-top:8px;">
             <button class="nav-btn" style="background-color:#F97316;color:white;border:none;padding:4px 8px;border-radius:4px;font-size:12px;cursor:pointer;width:100%;display:flex;align-items:center;justify-content:center;gap:4px;font-weight:bold;">
-              <span>${t.btn_navigate}</span>
+              <span>${sanitizeString(t.btn_navigate)}</span>
             </button>
           </div>
         </div>

@@ -1,3 +1,10 @@
+> **2026-09-29 현재 상태:** [완료/미완료 기능](docs/CURRENT_STATUS.md) · [재개 기록](docs/RESUME_CHECKPOINT.md)
+> AI는 OpenAI 서버 어댑터로 변경했으며 API 키 연결은 보류 중입니다. 아래는 이전 소개 자료로, Gemini·실시간·기기 검증 관련 표현은 최신 기능 상태를 우선해 읽어 주세요.
+
+> AWS 서버 반영 및 새 IP 접속 방법: [2026-09-26 배포 결과](docs/AWS_DEPLOYMENT.md).
+
+> 2026-09-25 구현 상태와 남은 작업: [구현 현황](docs/IMPLEMENTATION_STATUS.md), [AWS 연결 규격](docs/SERVER_INTEGRATION.md). 아래 기존 소개의 운영·실시간·인증 관련 표현은 이 현황 문서를 우선해 해석하세요.
+
 # 📱 O1BO (Zero-One Business Officer) - AWS 기반 스마트 출장 관리 및 근태 확인 시스템
 
 > **AWS Cloud Infrastructure & Database REST API** 기반의 고성능/안전한 데이터 관리, **Google Gemini AI** 기반 지능형 출장 일정 자동 생성, **GPS & NFC 2중 인증** 기반 근태 확인, 영수증 OCR 경비 정산 및 **기업 전용 데이터 보안 분리 메커니즘**을 갖춘 차세대 스마트 하이브리드 출장 관리 어플리케이션입니다.
@@ -122,7 +129,7 @@ npm install
 프로젝트 루트 경로에 `.env` 파일을 생성하고 아래 환경 변수를 설정합니다:
 ```env
 # Google Gemini AI Key
-VITE_GEMINI_API_KEY=your_google_gemini_api_key_here
+# AI 키는 AWS 서버의 OPENAI_API_KEY에 설정 (프런트에 넣지 않음)
 
 # AWS REST API Backend Server URL
 VITE_API_BASE_URL=http://your-aws-backend-domain.com/api

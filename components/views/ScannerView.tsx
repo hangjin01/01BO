@@ -1,9 +1,13 @@
 import React from 'react';
-import { ViewState, Trip, Lang } from '../../types';
+import { ViewState, Trip, Lang, Expense } from '../../types';
 import { IconCamera, IconChevronRight, IconPlus, IconImage } from '../Icons';
 
 interface ScannerViewProps {
   t: any;
+  onManualExpense: () => void;
+  busy: boolean;
+  expenses: Expense[];
+  onDeleteExpense: (id: string) => void;
   language: Lang;
   activeTrip: Trip | null;
   allTrips: Trip[];
@@ -15,6 +19,7 @@ interface ScannerViewProps {
 
 export const ScannerView: React.FC<ScannerViewProps> = ({
   t,
+  onManualExpense, busy, expenses, onDeleteExpense,
   language,
   activeTrip,
   allTrips,
@@ -70,7 +75,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   }
 
   return (
-    <div className="flex flex-col items-center justify-center h-[60vh] text-center space-y-4">
+    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
       <div className="w-20 h-20 bg-orange-50 dark:bg-orange-950/20 rounded-full flex items-center justify-center animate-pulse">
         <IconCamera className="w-10 h-10 text-brand-orange dark:text-brand-orange" />
       </div>
@@ -79,6 +84,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       
       {/* Camera Button */}
       <button 
+        disabled={busy}
         onClick={() => fileInputRef.current?.click()}
         className="bg-brand-orange hover:bg-orange-600 text-white px-6 py-3 rounded-full font-bold shadow-lg shadow-orange-500/20 w-64 flex items-center justify-center space-x-2 transition-all active:scale-95"
       >
@@ -88,12 +94,21 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
       {/* Gallery Button */}
       <button 
+        disabled={busy}
         onClick={() => galleryInputRef.current?.click()}
         className="bg-white dark:bg-gray-800 text-brand-orange dark:text-brand-orange border-2 border-orange-100 dark:border-gray-700 px-6 py-3 rounded-full font-bold shadow-sm w-64 flex items-center justify-center space-x-2 hover:bg-orange-50 dark:hover:bg-gray-700 transition-all active:scale-95"
       >
         <IconImage className="w-5 h-5" />
         <span>{t.btn_upload}</span>
       </button>
+      <button disabled={busy} onClick={onManualExpense} className="text-sm underline">{language === 'ja' ? '経費を手入力' : '경비 직접 입력'}</button>
+      <ul className="w-full max-w-md space-y-2 text-left">
+        {expenses.map(expense => <li key={expense.id} className="flex justify-between gap-3 p-3 border rounded-xl dark:text-white">
+          <div><p className="font-bold">{expense.merchant}</p><p className="text-sm">{expense.date} · ¥{expense.amount.toLocaleString()}</p></div>
+          <button disabled={busy} onClick={() => onDeleteExpense(expense.id)} className="text-red-600 text-sm">{language === 'ja' ? '削除' : '삭제'}</button>
+        </li>)}
+      </ul>
+      {busy && <p role="status">{language === 'ja' ? '処理中…' : '처리 중…'}</p>}
     </div>
   );
 };

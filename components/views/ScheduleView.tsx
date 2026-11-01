@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ViewState, Trip, ItineraryItem, CheckInRecord, Lang } from '../../types';
+import {PlaceSearch} from '../PlaceSearch';
 import { TripMap } from '../TripMap';
 import { 
   IconCalendar, IconChevronRight, IconPlus, IconFileText, IconMap, IconTrash, 
@@ -220,8 +221,8 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
       </div>
 
       {showMap ? (
-        <div className="flex-1 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 shadow-inner relative bg-gray-100 dark:bg-gray-800">
-          <TripMap items={activeTrip.itinerary} t={t} theme={theme} />
+        <div className="flex-1 min-h-[320px] rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 shadow-inner relative bg-gray-100 dark:bg-gray-800">
+          <TripMap items={activeTrip.itinerary} t={t} theme={theme} language={language} startDate={activeTrip.startDate} checkIns={checkIns.filter(record => record.tripId === activeTrip.id)} />
         </div>
       ) : (
         <div className="bg-orange-50/40 dark:bg-gray-800/50 p-4 rounded-xl border border-orange-100 dark:border-gray-700 flex-1 overflow-y-auto">
@@ -511,9 +512,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
                     <div className="space-y-4 pl-1">
                       {items.map((item) => {
                         const isCheckedIn = checkIns.some(c => c.itineraryItemId === item.id && c.type === 'check-in');
-                        const isManualCheckedOut = checkIns.some(c => c.itineraryItemId === item.id && c.type === 'check-out' && c.nfcTagId === 'manual');
-                        const isNfcCheckedOut = checkIns.some(c => c.itineraryItemId === item.id && c.type === 'check-out' && c.nfcTagId && c.nfcTagId !== 'manual');
-                        const isCheckedOut = isNfcCheckoutEnabled ? (isManualCheckedOut && isNfcCheckedOut) : isManualCheckedOut;
+                        const isCheckedOut = checkIns.some(c => c.itineraryItemId === item.id && c.type === 'check-out');
                         const isEditing = editingItemId === item.id;
                         
                         return (
@@ -557,9 +556,10 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
                                     <input 
                                       type="text" 
                                       value={editItemData.address || ''}
-                                      onChange={(e) => setEditItemData({...editItemData, address: e.target.value})}
+                                      onChange={(e) => setEditItemData({...editItemData, address: e.target.value,coords:undefined})}
                                       className="w-full text-xs p-1.5 border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-orange-100 dark:focus:ring-orange-500/30 outline-none"
                                     />
+                                    <PlaceSearch initialValue={editItemData.address} onSelect={place=>setEditItemData({...editItemData,locationName:place.name,address:place.address,coords:place.coords})}/>
                                   </div>
                                   <div className="flex space-x-2 pt-2">
                                     <button onClick={handleSaveEdit} className="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 rounded-lg flex items-center justify-center transition-colors">
@@ -610,40 +610,14 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
                                         {t.btn_checkin}
                                       </button>
                                     ) : !isCheckedOut ? (
-                                      <>
-                                        {!isManualCheckedOut ? (
-                                          <button 
-                                            onClick={() => handleManualCheckOut(item.id)}
-                                            className="flex-1 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 text-xs font-bold py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 active:scale-95 transition-all"
-                                          >
-                                            📝 {t.btn_manual_checkout || '수동 체크아웃'}
-                                          </button>
-                                        ) : (
-                                          <div className="flex-1 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900/40 text-green-600 dark:text-green-400 text-center text-xs font-bold py-2 rounded-lg flex items-center justify-center gap-1">
-                                            <span>✅</span> {t.status_manual_checked_out || '수동 완료'}
-                                          </div>
-                                        )}
-
-                                        {isNfcCheckoutEnabled && (
-                                          !isNfcCheckedOut ? (
-                                            <button 
-                                              onClick={() => handleCheckOut(item.id)}
-                                              className="flex-1 bg-brand-orange hover:bg-orange-600 text-white text-xs font-bold py-2 rounded-lg active:scale-95 transition-all shadow-sm"
-                                            >
-                                              ⚡ {t.btn_nfc_checkout || 'NFC 체크아웃'}
-                                            </button>
-                                          ) : (
-                                            <div className="flex-1 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900/40 text-green-600 dark:text-green-400 text-center text-xs font-bold py-2 rounded-lg flex items-center justify-center gap-1">
-                                              <span>⚡</span> {t.status_nfc_checked_out || 'NFC 완료'}
-                                            </div>
-                                          )
-                                        )}
-                                      </>
+                                      <button onClick={() => handleManualCheckOut(item.id)} className="flex-1 bg-brand-orange text-white text-xs font-bold py-2 rounded-lg active:scale-95">
+                                        {language === 'ja' ? 'チェックアウト' : '체크아웃'}
+                                      </button>
                                     ) : (
                                       <div className="flex-1 bg-orange-50 dark:bg-orange-950/30 border border-orange-100 dark:border-orange-900/20 text-brand-orange dark:text-brand-orange text-center text-xs font-bold py-2.5 rounded-lg flex items-center justify-center gap-1.5">
                                         <span>🎉</span> {language === 'ja' 
-                                          ? (isNfcCheckoutEnabled ? 'チェックアウト完了 (2重検証)' : 'チェックアウト完了') 
-                                          : (isNfcCheckoutEnabled ? '체크아웃 완료 (2중 검증)' : '체크아웃 완료')}
+                                          ? (checkIns.some(c => c.itineraryItemId === item.id && c.type === 'check-out' && c.verificationMethod === 'nfc_gps') ? 'チェックアウト完了 (2重検証)' : 'チェックアウト完了')
+                                          : (checkIns.some(c => c.itineraryItemId === item.id && c.type === 'check-out' && c.verificationMethod === 'nfc_gps') ? '체크아웃 완료 (2중 검증)' : '체크아웃 완료')}
                                       </div>
                                     )}
                                   </div>

@@ -1,14 +1,21 @@
+import {verifyNfcVisit} from './services/nfcVerification';
+import {cancelNfc,fetchNfcPolicy,nfcRequirement,scanNfc} from './services/nfcService';
 import { PasswordLogin } from './components/PasswordLogin';
 import { CompanyMembership } from './components/CompanyMembership';
 import { ExpenseReview, ExpenseDraft } from './components/ExpenseReview';
+import { Capacitor } from '@capacitor/core';
+import { pickReceiptPhoto } from './services/receiptCamera';
+import { NativeWake, supportsWake, stopWake } from './services/wakeService';
+import { NativeSpeech } from './services/speechService';
 import { assertDate, assertTripDates, normalizeItinerary } from './services/tripValidation';
 import { createReportDocx } from './services/reportExport';
 import React, { useState, useEffect, useRef } from 'react';
 import { Trip, ViewState, Coordinate, CheckInRecord, Expense, ItineraryItem, User, TripSummary } from './types';
+import {Place} from './components/PlaceSearch';
 import { getCurrentPosition, calculateDistance, geocodeAddress } from './services/locationService';
 import { analyzeReceiptImage, generateTripReport, adjustTripItinerary } from './services/geminiService';
 import {
-  ApiError, fetchHealth, fetchExchangeRate, fetchUsers,
+  apiFetch, ApiError, fetchHealth, fetchExchangeRate, fetchUsers,
   fetchTrips, fetchTripById, createTrip, fetchTripSummary, updateTrip, deleteTrip, sendReportEmail, sanitizeString, fetchSessionUser, updateMembership, updateProfile, endSession,
   fetchCheckIns, createCheckIn, fetchExpenses, createExpense, deleteExpense
 } from './services/apiService';
@@ -37,7 +44,7 @@ const TRANSLATIONS = {
     status_label: "現在のステータス",
     status_active: "出張中 (Active)",
     status_inactive: "出張予定なし",
-    btn_checkin: "手動チェックイン",
+    btn_checkin: "チェックイン",
     btn_expense: "経費入力",
     history_title: "最近の活動履歴",
     history_subtitle: "History",
@@ -45,7 +52,7 @@ const TRANSLATIONS = {
     btn_create_report: "日報作成 (AI)",
     trip_schedule_title: "訪問スケジュール",
     trip_schedule_hint: "現地に到着すると自動でチェックインされます",
-    btn_checkin_here: "手動チェックイン",
+    btn_checkin_here: "チェックイン",
     locating: "測位中...",
     scan_title: "レシートをスキャン",
     scan_desc: "カメラでレシートを撮影するか、画像を選択してください。AIが自動で内容を読み取ります。",
@@ -149,7 +156,7 @@ const TRANSLATIONS = {
     status_label: "현재 상태",
     status_active: "출장 중 (Active)",
     status_inactive: "출장 일정 없음",
-    btn_checkin: "수동 체크인",
+    btn_checkin: "체크인",
     btn_expense: "경비 입력",
     history_title: "최근 활동 내역",
     history_subtitle: "History",
@@ -157,7 +164,7 @@ const TRANSLATIONS = {
     btn_create_report: "일보 작성 (AI)",
     trip_schedule_title: "방문 일정",
     trip_schedule_hint: "현지에 도착하면 자동으로 체크인됩니다",
-    btn_checkin_here: "수동 체크인",
+    btn_checkin_here: "체크인",
     locating: "위치 확인 중...",
     scan_title: "영수증 스캔",
     scan_desc: "카메라로 영수증을 찍거나 이미지를 선택하세요. AI가 자동으로 내용을 읽어옵니다.",
@@ -335,7 +342,7 @@ const App: React.FC = () => {
   const [userNameInput, setUserNameInput] = useState('');
 
   // New Trip Form State
-  const [newTripData, setNewTripData] = useState({
+  const [newTripData, setNewTripData] = useState<{title:string;destination:string;startDate:string;endDate:string;purpose:string;isSharedWithTeam?:boolean;selectedPlace?:Place}>({
     title: '',
     destination: '',
     startDate: new Date().toISOString().split('T')[0],
@@ -387,16 +394,15 @@ const App: React.FC = () => {
   const [editItemData, setEditItemData] = useState<Partial<ItineraryItem>>({});
 
   // NFC Verification States
-  const [isNfcCheckoutEnabled, setIsNfcCheckoutEnabled] = useState<boolean>(() => {
-    return localStorage.getItem('o1bo_nfc_checkout_enabled') === 'true';
-  });
+  const [isNfcCheckoutEnabled, setIsNfcCheckoutEnabled] = useState(false);
   const [nfcModal, setNfcModal] = useState<{
     show: boolean;
+    typeVal: 'check-in' | 'check-out';
     itemId: string;
     item: ItineraryItem | null;
     distance: number;
     isChecking: boolean;
-    status: 'idle' | 'scanning' | 'success' | 'error';
+    status: 'idle' | 'scanning' | 'verifying' | 'saving' | 'success' | 'error';
     errorMsg?: string;
   } | null>(null);
 
@@ -411,13 +417,17 @@ const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
-  const nfcControllerRef = useRef<AbortController | null>(null);
+  const nfcAttemptRef = useRef(0);
 
   const t = TRANSLATIONS[language];
 
   useEffect(() => { localStorage.setItem('o1bo_language', language); }, [language]);
   useEffect(() => { localStorage.setItem('o1bo_theme', theme); }, [theme]);
-  useEffect(() => { localStorage.setItem('o1bo_nfc_checkout_enabled', String(isNfcCheckoutEnabled)); }, [isNfcCheckoutEnabled]);
+  useEffect(() => {
+    let alive=true;setIsNfcCheckoutEnabled(false);
+    if(userData?.companyCode)fetchNfcPolicy().then(p=>{if(alive)setIsNfcCheckoutEnabled(p.enabled);}).catch(()=>{});
+    return ()=>{alive=false;};
+  }, [userData?.companyCode]);
   useEffect(() => { localStorage.setItem('o1bo_kakao_app_key', kakaoAppKey); }, [kakaoAppKey]);
   useEffect(() => {
     if (userData) {
@@ -427,8 +437,8 @@ const App: React.FC = () => {
   }, [userData]);
 
   useEffect(() => {
-    if (!nfcModal?.show) nfcControllerRef.current?.abort();
-    return () => { nfcControllerRef.current?.abort(); };
+    if (!nfcModal?.show) cancelNfc();
+    return () => { nfcAttemptRef.current++; cancelNfc(); };
   }, [nfcModal?.show]);
   useEffect(() => () => { recognitionRef.current?.stop(); }, []);
 
@@ -516,6 +526,7 @@ const App: React.FC = () => {
 
   // REST API Sync Effect: Load data from REST API backend
   useEffect(() => {
+    void stopWake().catch(()=>{});
     setAiChatInput(''); setShowAIChat(false);
     recognitionRef.current?.stop();
     setAllTrips([]); setActiveTrip(null); setCheckIns([]); setExpenses([]);
@@ -567,8 +578,24 @@ const App: React.FC = () => {
 
   useEffect(() => { setGeneratedReport(activeTrip?.report || ''); }, [activeTrip?.id]);
 
+  useEffect(()=>{
+    if(!supportsWake()||!authUser?.uid)return;
+    let alive=true,inFlight=false;
+    const check=async()=>{
+      if(inFlight||document.visibilityState!=='visible')return;
+      inFlight=true;
+      try{const result=await NativeWake.consumeWake();if(alive&&result.detected)setShowAIChat(true);}
+      catch{/* Older APKs do not have the wake plugin. */}
+      finally{inFlight=false;}
+    };
+    const timer=window.setInterval(check,1000);
+    document.addEventListener('visibilitychange',check);
+    return()=>{alive=false;window.clearInterval(timer);document.removeEventListener('visibilitychange',check);};
+  },[authUser?.uid]);
+
   // Handlers & Logic
   const handleLogout = async () => {
+    await stopWake().catch(()=>{});
     {
       try { await endSession(); } catch {
         setNotification({ message: '서버 로그아웃에 실패했습니다. 다시 시도해 주세요.', type: 'error' });
@@ -629,6 +656,7 @@ const App: React.FC = () => {
     if (!targetItem) return;
 
     try {
+      if((await nfcRequirement(activeTrip.id,itemId)).required){openNfc(itemId,'check-in');return;}
       const coords = await getCurrentPosition();
       const dist = calculateDistance(coords, targetItem.coords);
 
@@ -664,6 +692,7 @@ const App: React.FC = () => {
     if (!targetItem) return;
 
     try {
+      if((await nfcRequirement(activeTrip.id,itemId)).required){openNfc(itemId,'check-out');return;}
       const coords = await getCurrentPosition();
       const newRecord = await (createCheckIn({
         userId: authUser.uid,
@@ -688,13 +717,16 @@ const App: React.FC = () => {
     }
   };
 
-  const handleCheckOut = (itemId: string) => {
+  const handleCheckOut = (itemId: string) => { void handleManualCheckOut(itemId); };
+
+  const openNfc = (itemId: string, typeVal: 'check-in' | 'check-out') => {
     if (!activeTrip) return;
     const item = activeTrip.itinerary.find(i => i.id === itemId);
     if (!item) return;
 
     setNfcModal({
       show: true,
+      typeVal,
       itemId,
       item,
       distance: 0,
@@ -710,69 +742,48 @@ const App: React.FC = () => {
     });
   };
 
+  const closeNfc = () => { nfcAttemptRef.current++; cancelNfc(); setNfcModal(null); };
   const startNfcScanning = async () => {
-    if (!nfcModal || !nfcModal.item || nfcModal.isChecking || nfcModal.distance > 50) return;
-
-    if (!('NDEFReader' in window)) {
-      setNfcModal(prev => prev ? { ...prev, status: 'error', errorMsg: t.nfc_unsupported } : null);
+    if(!nfcModal?.item||!activeTrip||!authUser||nfcModal.isChecking||nfcModal.distance>50||['scanning','verifying','saving'].includes(nfcModal.status))return;
+    const attempt=++nfcAttemptRef.current;
+    const modal=nfcModal,trip=activeTrip;
+    const current=()=>attempt===nfcAttemptRef.current;
+    try {
+      const saved=await verifyNfcVisit({
+        read:()=>scanNfc(), locate:getCurrentPosition, current,
+        stage:status=>{if(current())setNfcModal(prev=>prev?{...prev,status,errorMsg:undefined}:null);},
+        validate:coords=>{
+          if(calculateDistance(coords,modal.item!.coords)>50)throw new Error('방문 장소에서 50m 이내로 이동한 뒤 다시 시도해 주세요.');
+          if(!Number.isFinite(coords.accuracy)||coords.accuracy>50)throw new Error('GPS 정확도가 부족합니다. 정확한 위치 권한을 켜고 실외에서 다시 시도해 주세요.');
+        },
+        challenge:async()=> (await apiFetch<{token:string}>('/nfc/challenge',{method:'POST',body:JSON.stringify({tripId:trip.id,itemId:modal.itemId,typeVal:modal.typeVal})})).token,
+        save:(tag,coords,challenge)=>createCheckIn({userId:authUser.uid,tripId:trip.id,locationName:modal.item!.locationName,lat:coords.latitude,lng:coords.longitude,typeVal:modal.typeVal,verified:false,itineraryItemId:modal.itemId,companyCode:userData?.companyCode||trip.companyCode,nfcTagId:tag,nfcChallenge:challenge,locationAccuracy:coords.accuracy,locationTimestamp:coords.timestamp})
+      });
+      if(!saved||!current())return;
+      setCheckIns(prev=>[saved,...prev.filter(r=>r.id!==saved.id)]);
+      setNfcModal(prev=>prev?{...prev,status:'success'}:null);
+      setNotification({message:`${modal.item!.locationName}: NFC + GPS 확인 완료`,type:'success'});
+      setTimeout(()=>{if(current())closeNfc();},1500);
+    }catch(err:any){if(current())setNfcModal(prev=>prev?{...prev,status:'error',errorMsg:err.message}:null);}
+  };
+  const receiptPickerOpen = useRef(false);
+  const [pickingReceipt, setPickingReceipt] = useState(false);
+  const handleReceiptPick = async (source: 'camera' | 'gallery') => {
+    if (loading || receiptPickerOpen.current || !activeTrip) return;
+    if (!Capacitor.isNativePlatform()) {
+      (source === 'camera' ? fileInputRef : galleryInputRef).current?.click();
       return;
     }
-
+    receiptPickerOpen.current = true;
+    setPickingReceipt(true);
     try {
-      setNfcModal(prev => prev ? { ...prev, status: 'scanning' } : null);
-      const ndef = new (window as any).NDEFReader();
-      nfcControllerRef.current?.abort();
-      const controller = new AbortController();
-      nfcControllerRef.current = controller;
-      await ndef.scan({ signal: controller.signal });
-
-      ndef.onreading = async (event: any) => {
-        const serialNumber = event.serialNumber;
-        if (!serialNumber) {
-          setNfcModal(previous => previous ? { ...previous, status: 'error', errorMsg: 'NFC 태그 식별자를 읽지 못했습니다.' } : null);
-          return;
-        }
-        controller.abort();
-        await completeNfcCheckOut(serialNumber);
-      };
-
-      ndef.onreadingerror = () => {
-        setNfcModal(prev => prev ? { ...prev, status: 'error', errorMsg: t.nfc_error } : null);
-      };
-    } catch (err: any) {
-      setNfcModal(prev => prev ? { ...prev, status: 'error', errorMsg: err.message || t.nfc_error } : null);
-    }
-  };
-
-  const completeNfcCheckOut = async (serialNumber: string) => {
-    if (!nfcModal || !nfcModal.item || !authUser || !activeTrip) return;
-
-    try {
-      const coords = await getCurrentPosition();
-      if (calculateDistance(coords, nfcModal.item.coords) > 50) throw new Error('현장에서 50m 이내일 때 체크아웃할 수 있습니다.');
-      // Server must verify registered tags and recompute the distance.
-      const newRecord = await (createCheckIn({
-        userId: authUser.uid,
-        tripId: activeTrip.id,
-        locationName: nfcModal.item.locationName,
-        lat: coords.latitude,
-        lng: coords.longitude,
-        typeVal: 'check-out',
-        verified: false,
-        itineraryItemId: nfcModal.itemId,
-        companyCode: userData?.companyCode || activeTrip.companyCode || 'COMP01',
-        nfcTagId: serialNumber
-      }));
-
-      const next = [newRecord, ...checkIns];
-      setCheckIns(next);
-
-
-      setNfcModal(prev => prev ? { ...prev, status: 'success' } : null);
-      setNotification({ message: t.msg_checkout_ok.replace('{name}', nfcModal.item!.locationName), type: 'success' });
-      setTimeout(() => setNfcModal(null), 1500);
-    } catch (err: any) {
-      setNfcModal(prev => prev ? { ...prev, status: 'error', errorMsg: err.message } : null);
+      const file = await pickReceiptPhoto(source);
+      if (file) await handleFileUpload(file);
+    } catch {
+      setNotification({ message: language === 'ja' ? '写真が選択されませんでした。再試行するか経費を手入力してください。' : '사진을 가져오지 못했거나 선택이 취소됐습니다. 다시 선택하거나 경비를 직접 입력해 주세요.', type: 'error' });
+    } finally {
+      receiptPickerOpen.current = false;
+      setPickingReceipt(false);
     }
   };
 
@@ -785,8 +796,8 @@ const App: React.FC = () => {
     setLoading(true);
     try {
       if (file.size > 10 * 1024 * 1024) throw new Error('10MB 이하 이미지를 선택해 주세요.');
-      if (!['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(file.type)) {
-        throw new Error('지원되는 영수증 이미지 파일을 선택해 주세요.');
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+        throw new Error(language === 'ja' ? 'JPEG・PNG・WebPの領収書画像を選択してください。HEICは変換が必要です。' : 'JPEG·PNG·WebP 영수증 이미지를 선택해 주세요. HEIC 파일은 변환이 필요합니다.');
       }
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -933,13 +944,14 @@ const App: React.FC = () => {
 
     try {
       assertTripDates(newTripData.startDate, newTripData.endDate);
-      const coords = await geocodeAddress(newTripData.destination);
+      if(!newTripData.selectedPlace)throw new Error('장소 검색 결과에서 목적지를 선택해 주세요.');
+      const coords = newTripData.selectedPlace.coords;
       const itineraryItems: ItineraryItem[] = [
         {
           id: `item_${Date.now()}_1`,
           title: `${newTripData.destination} 도착 및 수속`,
-          locationName: `${newTripData.destination} 도착 및 수속`,
-          address: newTripData.destination,
+          locationName: newTripData.selectedPlace.name,
+          address: newTripData.selectedPlace.address,
           scheduledTime: '10:00',
           coords: coords,
           date: newTripData.startDate
@@ -1063,7 +1075,8 @@ const App: React.FC = () => {
         if (item.id === editingItemId) {
           let coords = item.coords;
           if (editItemData.address && editItemData.address !== item.address) {
-            coords = await geocodeAddress(editItemData.address);
+            if(!editItemData.coords)throw new Error('장소 검색 결과에서 변경할 주소를 선택해 주세요.');
+            coords = editItemData.coords;
           }
           return {
             ...item,
@@ -1244,11 +1257,23 @@ const App: React.FC = () => {
   };
 
   // Voice AI assistant & wake word handler
-  const startListening = () => {
+  const startListening = async () => {
+    if(isListening)return;
+    setShowAIChat(true);
+    if(Capacitor.getPlatform()==='android'){
+      setIsListening(true);
+      try{
+        await stopWake();
+        const result=await NativeSpeech.listen({language});
+        if(result.text)setAiChatInput(result.text);
+      }catch(error){setNotification({message:error instanceof Error?error.message:'음성 입력에 실패했습니다. 글자로 입력해 주세요.',type:'error'});}
+      finally{setIsListening(false);}
+      return;
+    }
     const windowRef = window as any;
     const SpeechRecognition = windowRef.SpeechRecognition || windowRef.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('Speech Recognition is not supported in this browser.');
+      setNotification({message:language==='ja'?'この端末では音声入力に対応していません。文字で入力してください。':'이 기기에서는 음성 입력을 지원하지 않습니다. 글자로 입력해 주세요.',type:'error'});
       return;
     }
 
@@ -1264,14 +1289,14 @@ const App: React.FC = () => {
 
     rec.onstart = () => setIsListening(true);
     rec.onend = () => setIsListening(false);
-    rec.onerror = () => setIsListening(false);
+    rec.onerror = () => {setIsListening(false);setNotification({message:language==='ja'?'マイクの許可と音声認識の設定を確認してください。':'마이크 권한과 음성 인식 설정을 확인해 주세요.',type:'error'});};
 
     rec.onresult = (e: any) => {
       const transcript = e.results[0][0].transcript;
       setAiChatInput(transcript);
     };
 
-    rec.start();
+    try{rec.start();}catch{setIsListening(false);setNotification({message:'음성 입력을 시작하지 못했습니다.',type:'error'});}
   };
 
   const refreshAgentTrip = async (tripId?: string) => {
@@ -1355,7 +1380,8 @@ const App: React.FC = () => {
           />
         )}
 
-        {/* View Router */}
+        {/* A fresh view animates once; data updates keep the current screen stable. */}
+        <div key={view} className="view-enter">
         {view === ViewState.HOME && (
           <HomeView
             t={t}
@@ -1499,12 +1525,12 @@ const App: React.FC = () => {
             language={language}
             activeTrip={activeTrip}
             allTrips={allTrips}
-            fileInputRef={fileInputRef}
-            galleryInputRef={galleryInputRef}
+            onGallery={() => void handleReceiptPick('gallery')}
+            onCamera={() => void handleReceiptPick('camera')}
             onManualExpense={handleManualExpense}
             expenses={expenses.filter(expense => expense.tripId === activeTrip?.id)}
             onDeleteExpense={handleDeleteExpense}
-            busy={loading}
+            busy={loading || pickingReceipt}
             setActiveTrip={setActiveTrip}
             navigateToCreateTrip={navigateToCreateTrip}
           />
@@ -1521,6 +1547,7 @@ const App: React.FC = () => {
             loading={loading}
           />
         )}
+        </div>
       </main>
 
       {/* Fixed Bottom Navigation */}
@@ -1583,7 +1610,8 @@ const App: React.FC = () => {
 
       {/* AI Bot FAB & Chat Modal */}
       <AIChatModal
-        key={authUser?.uid + ':' + userData?.companyCode}
+        key={authUser?.uid + ':' + userData?.companyCode + ':' + userData?.role}
+        accountScope={authUser?.uid + ':' + userData?.companyCode + ':' + userData?.role}
         language={language}
         showAIChat={showAIChat}
         setShowAIChat={setShowAIChat}
@@ -1602,10 +1630,10 @@ const App: React.FC = () => {
             <div className="flex justify-between items-center border-b border-gray-100 dark:border-gray-700 pb-3">
               <span className="text-xs font-bold text-brand-orange uppercase tracking-wider flex items-center gap-1">
                 <IconZap className="w-4 h-4" />
-                {t.nfc_title}
+                {nfcModal.typeVal === 'check-in' ? 'NFC 체크인 확인' : 'NFC 체크아웃 확인'}
               </span>
               <button
-                onClick={() => setNfcModal(null)}
+                disabled={nfcModal.status === 'saving'} onClick={closeNfc}
                 className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
               >
                 <IconX className="w-4 h-4" />
@@ -1631,6 +1659,8 @@ const App: React.FC = () => {
                   }`}>
                   {nfcModal.status === 'success' ? t.nfc_success :
                     nfcModal.status === 'error' ? (nfcModal.errorMsg || t.nfc_error) :
+                      nfcModal.status === 'saving' ? '서버에 확인 기록 저장 중입니다. 잠시 기다려 주세요.' :
+                      nfcModal.status === 'verifying' ? '태그 인식 완료. 현재 GPS 위치를 확인합니다.' :
                       nfcModal.status === 'scanning' ? t.nfc_waiting :
                         `${t.nfc_waiting} (${nfcModal.isChecking ? '위치 확인 중' : nfcModal.distance <= 50 ? '현장 반경 내' : '현장 반경 밖'})`}
                 </p>
@@ -1646,7 +1676,7 @@ const App: React.FC = () => {
                   </div>
                 )}
 
-                {nfcModal.status === 'idle' && nfcModal.distance <= 50 && (
+                {nfcModal.status === 'idle' && !nfcModal.isChecking && nfcModal.distance <= 50 && (
                   <button
                     onClick={startNfcScanning}
                     className="w-full bg-brand-orange hover:bg-orange-600 text-white font-bold py-3.5 rounded-xl shadow-md shadow-orange-500/20 active:scale-95 transition-all text-sm"
@@ -1655,9 +1685,10 @@ const App: React.FC = () => {
                   </button>
                 )}
 
-                {nfcModal.status === 'scanning' && (
+                {(nfcModal.status === 'error' || (nfcModal.status === 'idle' && nfcModal.distance > 50)) && <button className="w-full bg-orange-500 text-white rounded-xl py-3" onClick={()=>openNfc(nfcModal.itemId,nfcModal.typeVal)}>위치 확인 후 다시 시도</button>}
+                {['scanning','verifying'].includes(nfcModal.status) && (
                   <button
-                    onClick={() => setNfcModal(prev => prev ? { ...prev, status: 'idle', isChecking: false } : null)}
+                    onClick={closeNfc}
                     className="w-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 font-bold py-3 rounded-xl transition-all text-xs"
                   >
                     {t.btn_cancel}

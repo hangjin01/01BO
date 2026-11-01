@@ -56,6 +56,7 @@ export interface CheckInRecord {
   itineraryItemId?: string;
   companyCode?: string;
   nfcTagId?: string;
+  verificationMethod?: string;
   createdAt?: string;
 }
 
@@ -112,6 +113,7 @@ export interface BackendTrip {
 }
 
 export interface BackendCheckIn {
+  VERIFICATION_METHOD?: string;
   ID: string;
   USER_ID: string;
   TRIP_ID: string;

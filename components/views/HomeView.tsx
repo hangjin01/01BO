@@ -49,7 +49,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   setActiveTrip,
 }) => {
   return (
-    <div className="space-y-6 pb-4">
+    <div className="home-view min-w-0 w-full space-y-6 pb-4">
       {/* 1. Top Search & Filter Bar */}
       <div className="relative">
         <div className="flex items-center gap-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl px-4 py-3 shadow-card-soft">
@@ -175,12 +175,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
               <IconUserCheck className="w-4 h-4 text-brand-orange" />
               <span>{language === 'ko' ? '👥 회사 출장 현황 (사장 전용)' : '👥 チーム員出張状況'}</span>
             </h3>
-            <span className="text-[10px] font-bold text-brand-orange bg-orange-50 dark:bg-orange-950/40 px-2 py-0.5 rounded-full">
+            <span className="shrink-0 text-[10px] font-bold text-brand-orange bg-orange-50 dark:bg-orange-950/40 px-2 py-0.5 rounded-full">
               {teamTrips.length}{language === 'ko' ? '건 출장' : '件の出張'}
             </span>
           </div>
 
-          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
+          <div className="company-trips-scroll flex gap-3 overflow-x-auto pb-2">
             {teamTrips.map(trip => (
               <div 
                 key={trip.id}
@@ -227,8 +227,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white rounded-3xl p-5 shadow-xl relative overflow-hidden border border-slate-700/50">
             <div className="absolute -right-8 -bottom-8 w-40 h-40 bg-brand-orange/15 rounded-full blur-2xl pointer-events-none" />
             
-            <div className="flex justify-between items-start mb-4 relative z-10">
-              <div className="space-y-1">
+            <div className="flex gap-3 justify-between items-start mb-4 relative z-10">
+              <div className="min-w-0 flex-1 space-y-1">
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-brand-orange text-white text-[10px] font-black uppercase tracking-wider">
                   <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
                   Active Trip
@@ -239,20 +239,20 @@ export const HomeView: React.FC<HomeViewProps> = ({
                     👤 작성자: {activeTrip.userName}
                   </p>
                 )}
-                <p className="text-xs text-slate-300 flex items-center gap-1">
+                <p className="text-xs text-slate-300 flex flex-wrap items-center gap-1">
                   <IconMapPin className="w-3.5 h-3.5 text-brand-orange" />
                   <span>{activeTrip.destination}</span>
                   <span className="mx-1">•</span>
                   <span>{activeTrip.startDate} ~ {activeTrip.endDate}</span>
                 </p>
               </div>
-              <div className="p-2.5 rounded-2xl bg-white/10 backdrop-blur-md text-brand-orange border border-white/10">
+              <div className="shrink-0 p-2.5 rounded-2xl bg-white/10 backdrop-blur-md text-brand-orange border border-white/10">
                 <IconBriefcase className="w-6 h-6" />
               </div>
             </div>
 
             {/* Quick Action bar inside Active Hero */}
-            <div className="flex items-center justify-between pt-3 border-t border-slate-700/60 relative z-10">
+            <div className="flex flex-wrap gap-2 items-center justify-between pt-3 border-t border-slate-700/60 relative z-10">
               <button
                 onClick={() => {
                   setDurationFilter('all');
@@ -343,16 +343,16 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   {/* Timeline dot */}
                   <div className={`absolute -left-6 top-1.5 w-3 h-3 rounded-full border-2 border-white dark:border-gray-800 ${isCheckedIn ? 'bg-emerald-500' : 'bg-brand-orange'}`} />
                   
-                  <div className="flex-1 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-2xl border border-gray-100 dark:border-gray-700">
-                    <div className="flex justify-between items-start mb-1">
-                      <p className="font-bold text-gray-900 dark:text-white text-xs">{item.locationName}</p>
-                      <span className="text-[10px] font-bold text-brand-orange bg-orange-50 dark:bg-orange-950/40 px-2 py-0.5 rounded-md">
+                  <div className="min-w-0 flex-1 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-2xl border border-gray-100 dark:border-gray-700">
+                    <div className="flex gap-2 justify-between items-start mb-1">
+                      <p className="min-w-0 flex-1 font-bold text-gray-900 dark:text-white text-xs">{item.locationName}</p>
+                      <span className="shrink-0 text-[10px] font-bold text-brand-orange bg-orange-50 dark:bg-orange-950/40 px-2 py-0.5 rounded-md">
                         {item.scheduledTime}
                       </span>
                     </div>
                     <p className="text-[10px] text-gray-400 truncate">{item.address}</p>
                     
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-200/50 dark:border-gray-600/50">
+                    <div className="flex flex-wrap gap-2 items-center justify-between mt-2 pt-2 border-t border-gray-200/50 dark:border-gray-600/50">
                       {isCheckedIn ? (
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
                           <IconCheckCircle className="w-3.5 h-3.5" />
@@ -399,12 +399,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
         ) : (
           <div className="space-y-3">
             {checkIns.slice(0, 5).map(ci => (
-              <div key={ci.id} className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 dark:bg-gray-700/40 border border-gray-100 dark:border-gray-700">
-                <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-xl ${ci.type === 'check-out' ? 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200' : 'bg-orange-100 text-brand-orange dark:bg-orange-950/50 dark:text-brand-orange'}`}>
+              <div key={ci.id} className="flex flex-wrap gap-2 items-center justify-between p-3 rounded-2xl bg-gray-50 dark:bg-gray-700/40 border border-gray-100 dark:border-gray-700">
+                <div className="min-w-0 flex-1 flex items-center gap-3">
+                  <div className={`shrink-0 p-2 rounded-xl ${ci.type === 'check-out' ? 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200' : 'bg-orange-100 text-brand-orange dark:bg-orange-950/50 dark:text-brand-orange'}`}>
                     {ci.type === 'check-out' ? <IconLogOut className="w-4 h-4" /> : <IconZap className="w-4 h-4" />}
                   </div>
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <p className="font-bold text-gray-900 dark:text-white text-xs">{ci.locationName}</p>
                     <p className="text-[10px] text-gray-400">{new Date(ci.timestamp).toLocaleString(language === 'ja' ? 'ja-JP' : 'ko-KR')}</p>
                   </div>
@@ -416,12 +416,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
             ))}
 
             {expenses.slice(0, 3).map(ex => (
-              <div key={ex.id} className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 dark:bg-gray-700/40 border border-gray-100 dark:border-gray-700">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+              <div key={ex.id} className="flex flex-wrap gap-2 items-center justify-between p-3 rounded-2xl bg-gray-50 dark:bg-gray-700/40 border border-gray-100 dark:border-gray-700">
+                <div className="min-w-0 flex-1 flex items-center gap-3">
+                  <div className="shrink-0 p-2 rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
                     <IconReceipt className="w-4 h-4" />
                   </div>
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <p className="font-bold text-gray-900 dark:text-white text-xs">{ex.merchant}</p>
                     <p className="text-[10px] text-gray-400">{ex.category} • {ex.date}</p>
                   </div>

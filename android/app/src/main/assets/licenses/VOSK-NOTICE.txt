@@ -1,0 +1,5 @@
+Vosk API (Alpha Cephei Inc.) and vosk-model-small-ko-0.22
+License: Apache License 2.0
+https://github.com/alphacep/vosk-api
+https://alphacephei.com/vosk/models
+Korean model SHA-256: eea36124087fed26c59996a4761519458e3bd185e8ea9d9865ad8760c4a1d989

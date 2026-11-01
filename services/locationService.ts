@@ -1,23 +1,17 @@
 import { Coordinate } from '../types';
 
-export const getCurrentPosition = (): Promise<Coordinate> => {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error('Geolocation is not supported by your browser'));
-    } else {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          resolve({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          });
-        },
-        (error) => {
-          reject(error);
-        },
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-      );
-    }
+export type LocationFix = Coordinate & {accuracy: number; timestamp: number};
+export const getCurrentPosition = async (): Promise<LocationFix> => {
+  const {Capacitor}=await import('@capacitor/core');
+  if(Capacitor.isNativePlatform()){
+    const {Geolocation}=await import('@capacitor/geolocation');
+    await Geolocation.requestPermissions();
+    const pos=await Geolocation.getCurrentPosition({enableHighAccuracy:true,timeout:15000,maximumAge:0});
+    return {latitude:pos.coords.latitude,longitude:pos.coords.longitude,accuracy:pos.coords.accuracy,timestamp:pos.timestamp};
+  }
+  return new Promise((resolve,reject)=>{
+    if(!navigator.geolocation)return reject(new Error('위치 확인을 지원하지 않습니다.'));
+    navigator.geolocation.getCurrentPosition(pos=>resolve({latitude:pos.coords.latitude,longitude:pos.coords.longitude,accuracy:pos.coords.accuracy,timestamp:pos.timestamp}),reject,{enableHighAccuracy:true,timeout:15000,maximumAge:0});
   });
 };
 
@@ -42,59 +36,8 @@ function minLimit(val: number): number {
 }
 
 export const geocodeAddress = async (address: string): Promise<Coordinate> => {
-  if (!address || !address.trim()) {
-    throw new Error('Address is empty');
-  }
-
-  // 1. Google Maps Geocoding API (using VITE_GOOGLE_MAPS_API_KEY or localStorage override)
-  const mapsApiKey = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string)
-    || (typeof window !== 'undefined' ? localStorage.getItem('o1bo_google_maps_api_key') || "" : "");
-
-  if (mapsApiKey) {
-    try {
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${mapsApiKey}`;
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.status === 'OK' && data.results?.[0]?.geometry?.location) {
-          const loc = data.results[0].geometry.location;
-          console.log(`Geocoded via Google Maps: ${address} ->`, loc);
-          return {
-            latitude: loc.lat,
-            longitude: loc.lng
-          };
-        } else {
-          console.warn('Google Maps Geocoding failed or returned no results:', data.status, data.error_message || '');
-        }
-      }
-    } catch (err) {
-      console.error('Error with Google Maps Geocoding:', err);
-    }
-  }
-
-  // 2. Fallback to OpenStreetMap Nominatim API
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`;
-    const res = await fetch(url, {
-      headers: {
-        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
-      }
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.length > 0) {
-        const lat = parseFloat(data[0].lat);
-        const lon = parseFloat(data[0].lon);
-        console.log(`Geocoded via Nominatim: ${address} ->`, lat, lon);
-        return {
-          latitude: lat,
-          longitude: lon
-        };
-      }
-    }
-  } catch (err) {
-    console.error('Error with Nominatim Geocoding:', err);
-  }
-
-  throw new Error('주소의 위치를 확인할 수 없습니다. 상세 주소를 확인한 뒤 다시 시도해 주세요.');
+ const {apiFetch}=await import('./apiService');
+ const result=await apiFetch<{places:{coords:Coordinate}[]}>('/places/search?q='+encodeURIComponent(address.trim()));
+ if(result.places.length!==1)throw new Error('장소 검색에서 정확한 장소를 선택해 주세요.');
+ return result.places[0].coords;
 };

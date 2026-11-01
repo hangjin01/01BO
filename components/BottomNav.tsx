@@ -28,8 +28,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-white/95 dark:bg-gray-800/95 backdrop-blur-lg border-t border-gray-200/80 dark:border-gray-700/80 px-6 py-2.5 flex justify-between items-center z-40 safe-area-bottom shadow-lg transition-colors duration-200">
       <button 
+        aria-current={view === ViewState.HOME ? 'page' : undefined}
         onClick={() => setView(ViewState.HOME)}
-        className={`flex flex-col items-center space-y-1 transition-all ${view === ViewState.HOME ? 'text-brand-orange font-black scale-105' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
+        className={`nav-touch flex flex-col items-center space-y-1 ${view === ViewState.HOME ? 'text-brand-orange font-black scale-105' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
       >
         <IconHome className="w-5 h-5" />
         <span className="text-[10px] font-bold">{t.nav_home}</span>
@@ -42,7 +43,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           setCustomFilterEnd('');
           setView(ViewState.TRIP_DETAIL);
         }}
-        className={`flex flex-col items-center space-y-1 transition-all ${view === ViewState.TRIP_DETAIL ? 'text-brand-orange font-black scale-105' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
+        className={`nav-touch flex flex-col items-center space-y-1 ${view === ViewState.TRIP_DETAIL ? 'text-brand-orange font-black scale-105' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
       >
         <IconCalendar className="w-5 h-5" />
         <span className="text-[10px] font-bold">{t.nav_schedule}</span>
@@ -63,15 +64,16 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         onClick={() => {
           setView(ViewState.REPORT);
         }}
-        className={`flex flex-col items-center space-y-1 transition-all ${view === ViewState.REPORT ? 'text-brand-orange font-black scale-105' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
+        className={`nav-touch flex flex-col items-center space-y-1 ${view === ViewState.REPORT ? 'text-brand-orange font-black scale-105' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
       >
         <IconFileText className="w-5 h-5" />
         <span className="text-[10px] font-bold">{t.nav_report}</span>
       </button>
 
       <button 
+        aria-current={view === ViewState.SETTINGS ? 'page' : undefined}
         onClick={() => setView(ViewState.SETTINGS)}
-        className={`flex flex-col items-center space-y-1 transition-all ${view === ViewState.SETTINGS ? 'text-brand-orange font-black scale-105' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
+        className={`nav-touch flex flex-col items-center space-y-1 ${view === ViewState.SETTINGS ? 'text-brand-orange font-black scale-105' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
       >
         <IconUser className="w-5 h-5" />
         <span className="text-[10px] font-bold">{t.nav_settings}</span>

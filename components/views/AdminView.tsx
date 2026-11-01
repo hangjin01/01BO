@@ -78,23 +78,18 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 <p className="font-bold text-gray-900 dark:text-white">{checkIn.locationName}</p>
                 <p className="text-sm text-gray-500 dark:text-gray-400">{new Date(checkIn.timestamp).toLocaleString()}</p>
                 <p className="text-xs text-gray-400 mt-1">User: {companyUsers[checkIn.userId]?.name || checkIn.userId}</p>
-                {checkIn.type === 'check-out' && checkIn.nfcTagId && checkIn.nfcTagId !== 'manual' && (
-                  <p className="text-[10px] font-bold text-brand-orange dark:text-brand-orange mt-1 flex items-center gap-1">
-                    <span>⚡ NFC Verified</span>
-                    <span className="text-gray-400 dark:text-gray-500 font-normal">(SN: {checkIn.nfcTagId})</span>
-                  </p>
-                )}
+                <p className="text-xs mt-1">{checkIn.verificationMethod === 'nfc_gps' ? 'NFC + GPS 이중 확인' : checkIn.verificationMethod === 'gps' ? 'GPS 확인' : checkIn.verificationMethod === 'unverified' ? '위치 확인 필요' : '이전 기록'}</p>
               </div>
               <span className={`text-xs font-bold px-2 py-1 rounded-lg ${
                 checkIn.type === 'check-in' 
                   ? 'bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400' 
-                  : checkIn.nfcTagId === 'manual'
+                  : checkIn.verificationMethod !== 'nfc_gps'
                     ? 'bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
                     : 'bg-orange-50 text-brand-orange dark:bg-orange-900/30 dark:text-brand-orange'
               }`}>
                 {checkIn.type === 'check-in' 
                   ? 'Check-in' 
-                  : checkIn.nfcTagId === 'manual'
+                  : checkIn.verificationMethod !== 'nfc_gps'
                     ? 'Check-out (Manual)'
                     : 'Check-out (NFC)'
                 }

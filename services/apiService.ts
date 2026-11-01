@@ -79,6 +79,28 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
   }
 }
 
+// Fetch authenticated binary reports without putting session tokens in URLs.
+export async function apiDownload(endpoint:string,filename:string):Promise<void>{
+ if(isNativeApp()&&!/^https:\/\//i.test(API_BASE_URL))throw new Error('앱 서버의 HTTPS 주소 설정이 필요합니다.');
+ const token=await nativeSessionToken();
+ const response=await fetch(API_BASE_URL+endpoint,{credentials:'include',headers:token?{Authorization:`Bearer ${token}`}:{},signal:AbortSignal.timeout(30000)});
+ if(!response.ok){const e=await response.json().catch(()=>({}));throw new Error(e.message||'파일 다운로드 실패');}
+ const blob=await response.blob();
+ if(isNativeApp()){
+  const {Filesystem,Directory}=await import('@capacitor/filesystem');
+  const {Share}=await import('@capacitor/share');
+  const data=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onerror=()=>reject(new Error('파일 읽기 실패'));reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.readAsDataURL(blob);});
+  const path='reports/'+crypto.randomUUID()+'/'+filename.replace(/[^a-zA-Z0-9_.-]/g,'_');
+  const saved=await Filesystem.writeFile({path,data,directory:Directory.Cache,recursive:true});
+  await Share.share({title:'O1BO 일보',files:[saved.uri]});
+  return;
+ }
+ // Use the authenticated attachment endpoint so embedded browsers can handle the download.
+ // Session credentials stay in cookies, never in the URL. The request above checks errors first.
+ const a=document.createElement('a');
+ a.href=API_BASE_URL+endpoint;a.download=filename;document.body.appendChild(a);a.click();a.remove();
+}
+
 // --- DB 스키마 <-> 프론트엔드 모델 변환기 ---
 
 export function transformBackendUser(b: BackendUser): User {
@@ -160,6 +182,7 @@ export function transformBackendCheckIn(b: BackendCheckIn): CheckInRecord {
     itineraryItemId: b.ITINERARY_ITEM_ID || undefined,
     companyCode: b.COMPANY_CODE,
     nfcTagId: b.NFC_TAG_ID || undefined,
+    verificationMethod: b.VERIFICATION_METHOD,
     createdAt: b.CREATED_AT,
   };
 }
@@ -367,6 +390,9 @@ export async function createCheckIn(checkInData: {
   itineraryItemId?: string;
   companyCode?: string;
   nfcTagId?: string;
+  nfcChallenge?: string;
+  locationAccuracy?: number;
+  locationTimestamp?: number;
 }): Promise<CheckInRecord> {
   const coords = validateCoordinates(checkInData.lat, checkInData.lng);
 
@@ -383,6 +409,9 @@ export async function createCheckIn(checkInData: {
     itineraryItemId: checkInData.itineraryItemId || null,
     companyCode: checkInData.companyCode || 'COMP01',
     nfcTagId: checkInData.nfcTagId || null,
+    nfcChallenge: checkInData.nfcChallenge,
+    locationAccuracy: checkInData.locationAccuracy,
+    locationTimestamp: checkInData.locationTimestamp,
   };
 
   const res = await apiFetch<{ success: boolean; message?: string; data: BackendCheckIn | any }>('/check-ins', {
@@ -474,9 +503,13 @@ export async function deleteTrip(id: string): Promise<void> {
   await apiFetch(`/trips/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
+const reportEmailRequests=new Map<string,string>();
 export async function sendReportEmail(tripId: string, recipient: string, report: string): Promise<void> {
+  const digestBytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({tripId,recipient,report})));
+  const signature=Array.from(new Uint8Array(digestBytes),b=>b.toString(16).padStart(2,'0')).join('');
+  if(!reportEmailRequests.has(signature))reportEmailRequests.set(signature,crypto.randomUUID());
   await apiFetch(`/trips/${encodeURIComponent(tripId)}/report/email`, {
-    method: 'POST', body: JSON.stringify({ recipient, report }),
+    method: 'POST', body: JSON.stringify({ recipient, report,requestId:reportEmailRequests.get(signature) }),
   });
 }
 

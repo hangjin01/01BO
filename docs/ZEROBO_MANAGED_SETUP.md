@@ -1,10 +1,12 @@
+> Luna 전환 후 상태: 설정 반영 및 실제 본인 조회 1회 성공. 반복 검사에서는 통신 지연/43초 제한 초과가 발생해 안정성 검증 미완료. 아래 기존 전체 검증 결과는 Astra로 수행한 결과다.
+
 # 제로보 관리형 에이전트 구성 (2026-09-29)
 
 ## 실행 구조
 
 O1BO 앱 → 로그인된 AWS API → OpenAI Agents API의 제로보 → dispatch_zerobo 함수 요청 → AWS 권한 검사 및 DB 트랜잭션 → 앱에 실제 결과 표시.
 
-OpenAI는 대화 해석과 작업 선택을 맡고, 기존 AWS 서버(57.183.12.111)는 인증·회사별 접근 통제·Oracle 저장을 맡는다. 실행 환경은 `environment: {type: "none"}`이며 별도 샌드박스나 신규 호스팅 서버는 필요 없다. OpenAI API 사용량은 발생한다. DB 암호나 SSH 키를 에이전트에 제공하지 않는다.
+OpenAI는 대화 해석과 작업 선택을 맡고, 기존 AWS 서버(13.196.198.178)는 인증·회사별 접근 통제·Oracle 저장을 맡는다. 실행 환경은 `environment: {type: "none"}`이며 별도 샌드박스나 신규 호스팅 서버는 필요 없다. OpenAI API 사용량은 발생한다. DB 암호나 SSH 키를 에이전트에 제공하지 않는다.
 
 ## 텍스트 정의
 
@@ -14,7 +16,7 @@ OpenAI는 대화 해석과 작업 선택을 맡고, 기존 AWS 서버(57.183.12.
 docker exec -e O1BO_AGENT_ID_FILE=/app/.private/managed-agent.json trip-api node scripts/create-managed-agent.js --update
 ```
 
-저장된 정의 이름은 ‘제로보 · O1BO 출장 도우미’, 모델은 gpt-6-astra, reasoning low다. 앱 요청마다 이 정의와 업무 지침으로 새 세션을 만든다. 기존 세션을 다른 사용자에게 재사용하지 않는다.
+저장된 정의 이름은 ‘제로보 · O1BO 출장 도우미’, 모델은 gpt-5.6-luna, reasoning low다. 앱 요청마다 이 정의와 업무 지침으로 새 세션을 만든다. 기존 세션을 다른 사용자에게 재사용하지 않는다.
 
 ## 연결 범위
 

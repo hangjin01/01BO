@@ -31,7 +31,7 @@ def main():
     key=getpass.getpass('New OpenAI API key (hidden): ').strip()
     if not re.fullmatch(r'sk-[A-Za-z0-9_-]{20,}',key):
         raise SystemExit('Invalid key format; nothing saved.')
-    result=subprocess.run(['ssh','-i','/home/orora/aws/japan-app-key.pem','-o','IdentitiesOnly=yes','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','HostKeyAlias=57.182.243.64','-o','ConnectTimeout=10','ubuntu@57.183.12.111','python3 -c '+shlex.quote(REMOTE)],input=key,text=True,capture_output=True)
+    result=subprocess.run(['ssh','-i','/home/orora/aws/japan-app-key.pem','-o','IdentitiesOnly=yes','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','HostKeyAlias=57.182.243.64','-o','ConnectTimeout=10','ubuntu@57.183.24.179','python3 -c '+shlex.quote(REMOTE)],input=key,text=True,capture_output=True)
     key=''
     if result.returncode:
         raise SystemExit('Key storage failed. Check SSH connectivity; no secret output displayed.')

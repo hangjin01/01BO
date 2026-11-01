@@ -8,7 +8,8 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 5173,
         host: '127.0.0.1',
-        proxy: { '/api': { target: 'http://127.0.0.1:3000', changeOrigin: false } },
+        // Keep browser cookies first-party during localhost development.
+        proxy: { '/api': { target: 'https://api.01bo.cloud', changeOrigin: true, secure: true } },
       },
       plugins: [react()],
       resolve: {

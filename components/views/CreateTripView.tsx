@@ -1,4 +1,5 @@
 import React from 'react';
+import {PlaceSearch,Place} from '../PlaceSearch';
 import { ViewState } from '../../types';
 import { IconChevronRight, IconUserCheck } from '../Icons';
 
@@ -6,8 +7,8 @@ interface CreateTripViewProps {
   t: any;
   loading: boolean;
   tripCreationSource: ViewState | null;
-  newTripData: { title: string; destination: string; startDate: string; endDate: string; purpose: string; isSharedWithTeam?: boolean };
-  setNewTripData: React.Dispatch<React.SetStateAction<{ title: string; destination: string; startDate: string; endDate: string; purpose: string; isSharedWithTeam?: boolean }>>;
+  newTripData: { title: string; destination: string; startDate: string; endDate: string; purpose: string; isSharedWithTeam?: boolean; selectedPlace?: Place };
+  setNewTripData: React.Dispatch<React.SetStateAction<{ title: string; destination: string; startDate: string; endDate: string; purpose: string; isSharedWithTeam?: boolean; selectedPlace?: Place }>>;
   setView: (view: ViewState) => void;
   handleSaveTrip: () => void;
 }
@@ -51,10 +52,12 @@ export const CreateTripView: React.FC<CreateTripViewProps> = ({
           <input 
             type="text" 
             value={newTripData.destination}
-            onChange={(e) => setNewTripData({...newTripData, destination: e.target.value})}
+            onChange={(e) => setNewTripData({...newTripData, destination: e.target.value, selectedPlace: undefined})}
             className="w-full p-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-orange-100 dark:focus:ring-orange-500/30 focus:border-brand-orange dark:focus:border-brand-orange outline-none text-xs"
             placeholder="e.g. Tokyo, Japan"
           />
+          <PlaceSearch disabled={loading} onSelect={place=>setNewTripData({...newTripData,destination:place.name,selectedPlace:place})}/>
+          {newTripData.selectedPlace&&<p className="text-xs mt-2">선택한 주소: {newTripData.selectedPlace.address}</p>}
         </div>
 
         <div className="grid grid-cols-2 gap-4">

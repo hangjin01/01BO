@@ -100,3 +100,64 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Darken only base tiles: markers, popups and attribution keep their colors. */
+.trip-map-tiles-dark {
+  filter: invert(100%) hue-rotate(180deg) brightness(85%) contrast(90%);
+}
+
+/* Keep the company trip carousel's native scrollbar in the app's theme. */
+.company-trips-scroll {
+  --trip-scroll-track: #f3f4f6;
+  --trip-scroll-thumb: #9ca3af;
+  color-scheme: light;
+  scrollbar-width: thin;
+  scrollbar-color: var(--trip-scroll-thumb) var(--trip-scroll-track);
+}
+.dark .company-trips-scroll {
+  --trip-scroll-track: #111827;
+  --trip-scroll-thumb: #4b5563;
+  color-scheme: dark;
+}
+.company-trips-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+.company-trips-scroll::-webkit-scrollbar-track {
+  background: var(--trip-scroll-track);
+  border-radius: 999px;
+}
+.company-trips-scroll::-webkit-scrollbar-thumb {
+  background: var(--trip-scroll-thumb);
+  border-radius: 999px;
+}
+
+/* Short entrance motion: navigation never waits for an outgoing animation. */
+.view-enter {
+  animation: o1bo-view-enter 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sheet-enter {
+  animation: o1bo-sheet-enter 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.nav-touch {
+  transition: color 160ms ease, transform 160ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.nav-touch:active { transform: scale(0.95); }
+@keyframes o1bo-view-enter {
+  from { opacity: 0.4; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes o1bo-sheet-enter {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .view-enter, .sheet-enter { animation: none; }
+  .nav-touch { transition: none; }
+  .nav-touch:active { transform: none; }
+  html { scroll-behavior: auto; }
+}
+
+/* Keep unbroken titles/addresses inside mobile cards without hiding content. */
+.home-view :where(h2, h3, h4, p, span) { overflow-wrap: anywhere; }
+.home-view > div { min-width: 0; max-width: 100%; }

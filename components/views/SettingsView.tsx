@@ -1,3 +1,6 @@
+import {ZeroboWakeSettings} from '../ZeroboWakeSettings';
+import {NfcSettings} from '../NfcSettings';
+import { GmailConnect } from '../GmailConnect';
 import { CompanyMembership } from '../CompanyMembership';
 import React from 'react';
 import { ViewState, User, Lang } from '../../types';
@@ -61,6 +64,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   return (
     <div className="space-y-6">
       {userData && <CompanyMembership user={userData} language={language} onJoined={onCompanyJoined} />}
+      <GmailConnect />
+      <ZeroboWakeSettings language={language} />
+      {userData?.companyCode && <NfcSettings companyCode={userData.companyCode} onChanged={setIsNfcCheckoutEnabled} />}
       {/* Profile & Nickname Card */}
       <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 space-y-3">
         <div className="flex items-center gap-3">
@@ -211,33 +217,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${theme === 'dark' ? 'bg-brand-orange' : 'bg-gray-200'}`}
           >
             <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${theme === 'dark' ? 'translate-x-6' : 'translate-x-1'}`} />
-          </button>
-        </div>
-
-        {/* NFC Check-out Toggle */}
-        <div className="border-t border-gray-100 dark:border-gray-700/50 pt-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-orange-50 dark:bg-orange-950/30 rounded-lg text-brand-orange dark:text-brand-orange">
-              <IconZap className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="font-bold text-gray-800 dark:text-white">
-                {language === 'ja' ? 'NFCチェックアウト必須' : 'NFC 체크아웃 필수'}
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                {language === 'ja' ? 'チェックアウト時にNFCタグの読み取りを必須にします' : '체크아웃 시 NFC 태그 인식을 필수 단계로 지정합니다'}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => setIsNfcCheckoutEnabled(prev => {
-              const newVal = !prev;
-              localStorage.setItem('o1bo_nfc_checkout_enabled', newVal ? 'true' : 'false');
-              return newVal;
-            })}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isNfcCheckoutEnabled ? 'bg-brand-orange' : 'bg-gray-200'}`}
-          >
-            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isNfcCheckoutEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
           </button>
         </div>
 

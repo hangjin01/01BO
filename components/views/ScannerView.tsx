@@ -11,8 +11,8 @@ interface ScannerViewProps {
   language: Lang;
   activeTrip: Trip | null;
   allTrips: Trip[];
-  fileInputRef: React.RefObject<HTMLInputElement>;
-  galleryInputRef: React.RefObject<HTMLInputElement>;
+  onCamera: () => void;
+  onGallery: () => void;
   setActiveTrip: (trip: Trip | null) => void;
   navigateToCreateTrip: (source: ViewState) => void;
 }
@@ -23,8 +23,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   language,
   activeTrip,
   allTrips,
-  fileInputRef,
-  galleryInputRef,
+  onCamera,
+  onGallery,
   setActiveTrip,
   navigateToCreateTrip,
 }) => {
@@ -85,7 +85,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       {/* Camera Button */}
       <button 
         disabled={busy}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={onCamera}
         className="bg-brand-orange hover:bg-orange-600 text-white px-6 py-3 rounded-full font-bold shadow-lg shadow-orange-500/20 w-64 flex items-center justify-center space-x-2 transition-all active:scale-95"
       >
         <IconCamera className="w-5 h-5" />
@@ -95,7 +95,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       {/* Gallery Button */}
       <button 
         disabled={busy}
-        onClick={() => galleryInputRef.current?.click()}
+        onClick={onGallery}
         className="bg-white dark:bg-gray-800 text-brand-orange dark:text-brand-orange border-2 border-orange-100 dark:border-gray-700 px-6 py-3 rounded-full font-bold shadow-sm w-64 flex items-center justify-center space-x-2 hover:bg-orange-50 dark:hover:bg-gray-700 transition-all active:scale-95"
       >
         <IconImage className="w-5 h-5" />

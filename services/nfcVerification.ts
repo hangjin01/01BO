@@ -1,3 +1,4 @@
+// 취소/화면 전환 후 도착한 비동기 결과로 방문을 저장하지 않도록 단계마다 실행 유효성을 확인한다.
 import type { LocationFix } from './locationService';
 
 export type NfcStage = 'scanning' | 'verifying' | 'saving';

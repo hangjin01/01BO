@@ -9,7 +9,7 @@ import { NativeWake, supportsWake, stopWake } from './services/wakeService';
 import { NativeSpeech } from './services/speechService';
 import { assertDate, assertTripDates, normalizeItinerary } from './services/tripValidation';
 import { createReportDocx } from './services/reportExport';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Trip, ViewState, Coordinate, CheckInRecord, Expense, ItineraryItem, User, TripSummary } from './types';
 import {Place} from './components/PlaceSearch';
 import { getCurrentPosition, calculateDistance, geocodeAddress } from './services/locationService';
@@ -29,12 +29,12 @@ import { BottomNav } from './components/BottomNav';
 import { AIChatModal } from './components/AIChatModal';
 import { TutorialModal, HelpModal } from './components/Modals';
 import { HomeView } from './components/views/HomeView';
-import { ScheduleView } from './components/views/ScheduleView';
-import { ReportView } from './components/views/ReportView';
-import { SettingsView } from './components/views/SettingsView';
-import { AdminView } from './components/views/AdminView';
-import { ScannerView } from './components/views/ScannerView';
-import { CreateTripView } from './components/views/CreateTripView';
+const ScheduleView = lazy(() => import('./components/views/ScheduleView').then(module => ({ default: module.ScheduleView })));
+const ReportView = lazy(() => import('./components/views/ReportView').then(module => ({ default: module.ReportView })));
+const SettingsView = lazy(() => import('./components/views/SettingsView').then(module => ({ default: module.SettingsView })));
+const AdminView = lazy(() => import('./components/views/AdminView').then(module => ({ default: module.AdminView })));
+const ScannerView = lazy(() => import('./components/views/ScannerView').then(module => ({ default: module.ScannerView })));
+const CreateTripView = lazy(() => import('./components/views/CreateTripView').then(module => ({ default: module.CreateTripView })));
 
 // --- Translations ---
 type Lang = 'ja' | 'ko';
@@ -429,12 +429,8 @@ const App: React.FC = () => {
     return ()=>{alive=false;};
   }, [userData?.companyCode]);
   useEffect(() => { localStorage.setItem('o1bo_kakao_app_key', kakaoAppKey); }, [kakaoAppKey]);
-  useEffect(() => {
-    if (userData) {
-      localStorage.setItem('o1bo_current_user', JSON.stringify(userData));
-
-    }
-  }, [userData]);
+  // Profiles are refreshed from the session API; never persist names/emails in localStorage.
+  useEffect(() => { localStorage.removeItem('o1bo_current_user'); }, []);
 
   useEffect(() => {
     if (!nfcModal?.show) cancelNfc();
@@ -1211,6 +1207,7 @@ const App: React.FC = () => {
 
   const renderMarkdown = (text: string): string => {
     if (!text) return '';
+    // Escape untrusted report text before adding our fixed markup; never allow raw HTML.
     let html = sanitizeString(text)
       .replace(/^### (.*$)/gim, '<h3 class="text-base font-bold text-slate-800 dark:text-white mt-4 mb-2">$1</h3>')
       .replace(/^## (.*$)/gim, '<h3 class="text-lg font-bold text-brand-orange mt-6 mb-3 border-b border-orange-100 pb-2">$1</h3>')
@@ -1381,6 +1378,8 @@ const App: React.FC = () => {
         )}
 
         {/* A fresh view animates once; data updates keep the current screen stable. */}
+        {/* Load secondary screens only when selected; keep navigation mounted. */}
+        <Suspense fallback={<p role="status">{language === 'ja' ? '読み込み中…' : '화면을 불러오는 중…'}</p>}>
         <div key={view} className="view-enter">
         {view === ViewState.HOME && (
           <HomeView
@@ -1548,6 +1547,7 @@ const App: React.FC = () => {
           />
         )}
         </div>
+        </Suspense>
       </main>
 
       {/* Fixed Bottom Navigation */}

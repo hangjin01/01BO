@@ -1,8 +1,9 @@
 import { Coordinate } from '../types';
+import { Capacitor } from '@capacitor/core';
+import { apiFetch } from './apiService';
 
 export type LocationFix = Coordinate & {accuracy: number; timestamp: number};
 export const getCurrentPosition = async (): Promise<LocationFix> => {
-  const {Capacitor}=await import('@capacitor/core');
   if(Capacitor.isNativePlatform()){
     const {Geolocation}=await import('@capacitor/geolocation');
     await Geolocation.requestPermissions();
@@ -26,7 +27,9 @@ export const calculateDistance = (coord1: Coordinate, coord2: Coordinate): numbe
   const a =
     Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
     Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - minLimit(a))); // wait, Math.sqrt(1 - a) is original
+  // Clamp floating-point rounding at antipodal points to avoid NaN distances.
+  const h = minLimit(a);
+  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 
   return R * c;
 };
@@ -36,7 +39,6 @@ function minLimit(val: number): number {
 }
 
 export const geocodeAddress = async (address: string): Promise<Coordinate> => {
- const {apiFetch}=await import('./apiService');
  const result=await apiFetch<{places:{coords:Coordinate}[]}>('/places/search?q='+encodeURIComponent(address.trim()));
  if(result.places.length!==1)throw new Error('장소 검색에서 정확한 장소를 선택해 주세요.');
  return result.places[0].coords;

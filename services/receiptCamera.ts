@@ -1,3 +1,4 @@
+// 카메라/갤러리 선택은 사용자 동작에서 시작하며 취소와 권한 오류를 성공 데이터로 바꾸지 않는다.
 import { Camera } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
 

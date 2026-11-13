@@ -368,7 +368,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                       )}
                       
                       <button
-                        onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${item.coords.latitude},${item.coords.longitude}`, '_blank')}
+                        onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${item.coords.latitude},${item.coords.longitude}`, '_blank', 'noopener,noreferrer')}
                         className="text-[10px] font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white flex items-center gap-0.5"
                       >
                         <span>{t.btn_navigate}</span>

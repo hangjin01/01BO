@@ -1,5 +1,7 @@
 /* O1BO Custom Stylesheet */
-/* Tailwind is loaded via CDN in index.html, you can add custom styles here if needed. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 /* Maplibre Popup Custom Styles */
 .maplibregl-popup {

@@ -1,3 +1,5 @@
+> **2026-11-12 제출 보강:** [보안·성능 변경과 검증 범위](docs/SUBMISSION_SECURITY_20261112.md). 앱 v0.321 / 코드 8. 아래 v0.32 영상은 이전 시연 증거입니다. 새 소스의 운영 적용·실기기 검증과 구분하세요.
+
 <div align="center">
   <img src="public/brand/logo.png" alt="01BO 주황색 캐리어 로고" width="150">
   <h1>01BO · 출장의 시작부터 일보 발송까지</h1>

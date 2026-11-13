@@ -105,7 +105,7 @@ export const TripMap = ({ items, t, theme, language = 'ko', startDate = '', chec
       const navBtn = popupContent.querySelector('.nav-btn');
       if (navBtn) {
         navBtn.addEventListener('click', () => {
-          window.open(`https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`, '_blank');
+          window.open(`https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`, '_blank', 'noopener,noreferrer');
         });
       }
 

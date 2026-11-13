@@ -1,3 +1,4 @@
+// 네이티브 세션만 보안 저장소에 보관한다. 웹은 HttpOnly 쿠키를 사용하며 JS에 세션을 복제하지 않는다.
 import { Capacitor } from '@capacitor/core';
 export const isNativeApp = () => Capacitor.isNativePlatform();
 const key = 'o1bo_session_v1';
